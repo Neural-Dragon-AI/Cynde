@@ -1,7 +1,7 @@
 # Cynde
 ### Integrating Semantic Wisdom with Predictive Models
 
-Cynde, inspired by the Old English word for something inherent or natural, is crafted to tackle the complex challenge of integrating unstructured text with structured tabular data. By utilizing the collective intelligence of large language models (LLMs), Cynde refines the approach to enrich, analyze, and model data within Polars data frames. This library stands at the crossroads of the large language model craze and contemporary data science, enabling a sophisticated fusion of alchemic llm procedures with cutting-edge predictive modeling techniques.
+Cynde, inspired by the Old English word  /ˈkyn.de/ for something inherent or innate, is crafted to tackle the complex challenge of integrating unstructured text with structured tabular data. By utilizing the collective intelligence of large language models (LLMs), Cynde refines the approach to enrich, analyze, and model data within Polars data frames. This library stands at the crossroads of the large language model craze and contemporary data science, enabling a sophisticated fusion of alchemic LLMs procedures with cutting-edge predictive modeling techniques. LLMs outputs are managed via grammar-constrained extraction to adhere to pydantic data-classes that encapsulate the user domain specific knowledge and objective.
 
 ## Core Functionalities
 
