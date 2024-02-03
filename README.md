@@ -46,7 +46,8 @@ This library stands at the crossroads of the large language model craze and cont
 
     embedded_df = cf.embed_columns(df, ["feedback"], client=client)
     print(embedded_df)
-
+    ```
+    ```
     Creating embeddings for column feedback
     Processing 3 chunks of text in a single batch
     Embedding Processing took 0.5198197364807129 seconds
@@ -88,6 +89,8 @@ This library stands at the crossroads of the large language model craze and cont
                         pl.col("feedback")],
                         "customer_prompt")
     print(df_prompted)
+    ```
+    ```
     shape: (3, 6)
     ┌─────────────┬───────────────────┬───────────┬──────────────┬──────────────────┬──────────────────┐
     │ customer_id ┆ feedback          ┆ ratings   ┆ timestamp    ┆ feedback_text-em ┆ customer_prompt  │
