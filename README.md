@@ -1,7 +1,9 @@
 # Cynde
 ### Integrating Semantic Wisdom with Predictive Models
 
-Cynde, inspired by the Old English word  /ˈkyn.de/ for something inherent or innate, is crafted to tackle the complex challenge of integrating unstructured text with structured tabular data. By utilizing the collective intelligence of large language models (LLMs), Cynde refines the approach to enrich, analyze, and model data within Polars data frames. LLMs outputs are tamed via grammar-constrained extraction to adhere to pydantic data-classes that encapsulate the user domain specific knowledge and objectives. These generated data are further combined with traditional tabular data for predictive modelling or used as target variables for distillation of the llm capabiliteis into smaller models.
+python -m pip install pathto/Cynde
+
+Cynde, inspired by the Old English word  /ˈkyn.de/ for something inherent or innate, is crafted to tackle the complex challenge of integrating unstructured text with structured tabular data. By utilizing the collective intelligence of large language models (LLMs), Cynde refines the approach to enrich, analyze, and model data within Polars data frames. LLMs outputs are tamed via grammar-constrained extraction to adhere to pydantic data-classes that encapsulate the user domain specific knowledge and objectives. Cynde allows further combines the generated data with traditional tabular data for predictive modelling or can use them as target variables for distillation of the llm capabilities into smaller models using a combination of language embeddings and decision trees ensembles.
 This library stands at the crossroads of the large language model craze and contemporary data science, enabling a sophisticated fusion of alchemic LLMs procedures with cutting-edge predictive modeling techniques. 
 
 ## Core Functionalities
@@ -9,12 +11,9 @@ This library stands at the crossroads of the large language model craze and cont
 ### Semantic Embeddings from Textual Data
 - Cynde allows for the automatic creation of new array columns in Polars data frames, converting string columns into semantic embeddings. This is achieved through the use of encoder-only transformers models mapping textual information into a numerical format that is immediately useful for machine learning applications.
 
-### Dynamic Prompt Construction with Polars Expressions and Operations
--  Cynde's advanced use of `polars.format` goes beyond simple text integration, enabling the execution of sophisticated operations on data frame columns to enrich LLM prompts with processed data insights. By incorporating Polars expressions that perform computations or extract specific data attributes, Cynde facilitates the creation of highly informative and contextually rich prompts for LLM interaction.
-
-    This functionality allows for dynamic prompt generation that not only integrates raw data but also leverages the transformed outputs of various column operations—such as aggregations, computations, and temporal data manipulations. Executing these operations in parallel across the dataset, Cynde ensures efficient generation of enriched prompts, perfectly suited for detailed LLM analysis or data augmentation.
     ```python
     import polars as pl
+    import cynde.functional as cf 
     from datetime import datetime
 
     # Sample data frame initialization
@@ -34,19 +33,79 @@ This library stands at the crossroads of the large language model craze and cont
             ],
         }
     )
+    print(df)
+    ┌─────────────┬───────────────────────────────────┬───────────┬─────────────────────┐
+    │ customer_id ┆ feedback                          ┆ ratings   ┆ timestamp           │
+    │ ---         ┆ ---                               ┆ ---       ┆ ---                 │
+    │ i64         ┆ str                               ┆ list[i64] ┆ datetime[μs]        │
+    ╞═════════════╪═══════════════════════════════════╪═══════════╪═════════════════════╡
+    │ 101         ┆ Loved the new product line!       ┆ [4, 5, 5] ┆ 2023-01-01 14:30:00 │
+    │ 102         ┆ The service was disappointing th… ┆ [2, 3, 2] ┆ 2023-01-02 09:15:00 │
+    │ 103         ┆ Great experience with customer s… ┆ [5, 4, 5] ┆ 2023-01-03 18:45:00 │
+    └─────────────┴───────────────────────────────────┴───────────┴─────────────────────┘
 
+    embedded_df = cf.embed_columns(df, ["feedback"], client=client)
+    print(embedded_df)
+
+    Creating embeddings for column feedback
+    Processing 3 chunks of text in a single batch
+    Embedding Processing took 0.5198197364807129 seconds
+    shape: (3, 5)
+    ┌─────────────┬─────────────────────────┬───────────┬─────────────────────┬────────────────────────┐
+    │ customer_id ┆ feedback                ┆ ratings   ┆ timestamp           ┆ feedback_text-embeddin │
+    │ ---         ┆ ---                     ┆ ---       ┆ ---                 ┆ g-3-small_…            │
+    │ i64         ┆ str                     ┆ list[i64] ┆ datetime[μs]        ┆ ---                    │
+    │             ┆                         ┆           ┆                     ┆ list[f64]              │
+    ╞═════════════╪═════════════════════════╪═══════════╪═════════════════════╪════════════════════════╡
+    │ 101         ┆ Loved the new product   ┆ [4, 5, 5] ┆ 2023-01-01 14:30:00 ┆ [0.029205, -0.036287,  │
+    │             ┆ line!                   ┆           ┆                     ┆ … 0.000765…            │
+    │ 102         ┆ The service was         ┆ [2, 3, 2] ┆ 2023-01-02 09:15:00 ┆ [-0.005782, 0.019236,  │
+    │             ┆ disappointing th…       ┆           ┆                     ┆ … -0.00427…            │
+    │ 103         ┆ Great experience with   ┆ [5, 4, 5] ┆ 2023-01-03 18:45:00 ┆ [-0.014194, -0.027349, │
+    │             ┆ customer s…             ┆           ┆                     ┆ … 0.02145…             │
+    └─────────────┴─────────────────────────┴───────────┴─────────────────────┴────────────────────────┘
+    ```
+    
+
+### Dynamic Prompt Construction with Polars Expressions and Operations
+-  Cynde's advanced use of `polars.format` goes beyond simple text integration, enabling the execution of sophisticated operations on data frame columns to enrich LLM prompts with processed data insights. By incorporating Polars expressions that perform computations or extract specific data attributes, Cynde facilitates the creation of highly informative and contextually rich prompts for LLM interaction.
+
+    This functionality allows for dynamic prompt generation that not only integrates raw data but also leverages the transformed outputs of various column operations—such as aggregations, computations, and temporal data manipulations. Executing these operations in parallel across the dataset, Cynde ensures efficient generation of enriched prompts, perfectly suited for detailed LLM analysis or data augmentation.
+    ```python
+    import polars as pl
+
+
+    fstring = "Customer ID: {} provided feedback at {} with ratings {} an average rating of {} with a global mean of {}: '{}'"
     # Dynamic prompt generation with in-select computations
-    df = df.select(
-        [
-            pl.format(
-                "Customer ID: {} provided feedback at {}h with an average rating of {}: '{}'",
-                pl.col("customer_id"),
-                pl.col("timestamp").dt.hour(),
-                pl.col("ratings").arr.mean().round(2),
-                pl.col("feedback")
-            ).alias("prompt"),
-        ]
-    )
+
+    df_prompted = cf.prompt(embedded_df, 
+                        fstring,
+                        [pl.col("customer_id"),
+                        pl.col("timestamp").dt.hour(), #from timestamp to hour
+                        pl.col("ratings").list.eval(pl.element().cast(pl.Utf8)).list.join("-"), #needs to convert list columns to string
+                        pl.col("ratings").list.mean(), #from list to float
+                        pl.col("ratings").list.mean().mean(), #constant that gets broadcasted with pl.lit
+                        pl.col("feedback")],
+                        "customer_prompt")
+    print(df_prompted)
+    shape: (3, 6)
+    ┌─────────────┬───────────────────┬───────────┬──────────────┬──────────────────┬──────────────────┐
+    │ customer_id ┆ feedback          ┆ ratings   ┆ timestamp    ┆ feedback_text-em ┆ customer_prompt  │
+    │ ---         ┆ ---               ┆ ---       ┆ ---          ┆ bedding-3-small_ ┆ ---              │
+    │ i64         ┆ str               ┆ list[i64] ┆ datetime[μs] ┆ …                ┆ str              │
+    │             ┆                   ┆           ┆              ┆ ---              ┆                  │
+    │             ┆                   ┆           ┆              ┆ list[f64]        ┆                  │
+    ╞═════════════╪═══════════════════╪═══════════╪══════════════╪══════════════════╪══════════════════╡
+    │ 101         ┆ Loved the new     ┆ [4, 5, 5] ┆ 2023-01-01   ┆ [0.029205,       ┆ Customer ID: 101 │
+    │             ┆ product line!     ┆           ┆ 14:30:00     ┆ -0.036287, …     ┆ provided feedba… │
+    │             ┆                   ┆           ┆              ┆ 0.000765…        ┆                  │
+    │ 102         ┆ The service was   ┆ [2, 3, 2] ┆ 2023-01-02   ┆ [-0.005782,      ┆ Customer ID: 102 │
+    │             ┆ disappointing th… ┆           ┆ 09:15:00     ┆ 0.019236, …      ┆ provided feedba… │
+    │             ┆                   ┆           ┆              ┆ -0.00427…        ┆                  │
+    │ 103         ┆ Great experience  ┆ [5, 4, 5] ┆ 2023-01-03   ┆ [-0.014194,      ┆ Customer ID: 103 │
+    │             ┆ with customer s…  ┆           ┆ 18:45:00     ┆ -0.027349, …     ┆ provided feedba… │
+    │             ┆                   ┆           ┆              ┆ 0.02145…         ┆                  │
+    └─────────────┴───────────────────┴───────────┴──────────────┴──────────────────┴──────────────────┘
     ```
 
 ### Enhanced Data Columns via Language Model Generation with Cynde
