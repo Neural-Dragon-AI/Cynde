@@ -8,7 +8,7 @@ import openai
 from cynde.functional.generate import generate_chat_completion_payloads, generate_chat_payloads_from_column
 import asyncio
 from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
-from cynde.functional.generate import merge_df_with_openai_results,load_openai_results_jsonl
+from cynde.functional.generate import merge_df_with_openai_results,load_openai_results_jsonl, process_and_merge_llm_responses
 
 
 def generate_demo_df():
@@ -83,41 +83,11 @@ if __name__ == "__main__":
     for prompt in df_prompted["customer_prompt"]:
         print(prompt)
 
-    # Prepare chat completion payloads for processing with OpenAI's API.
-    print("\nGenerating chat completion payloads...")
-    payload_df = generate_chat_payloads_from_column(requests_filepath, df_prompted, "customer_prompt", system_prompt)
-    print("Payloads generated and saved to file.")
-    print(payload_df)
-
-    # Process API requests to generate chat completions.
-    request_url = "https://api.openai.com/v1/chat/completions"  # Adjust as needed for your API endpoint.
-
-    print("\nProcessing API requests for chat completions...")
-    asyncio.run(
-        process_api_requests_from_file(
-            requests_filepath=requests_filepath,
-            save_filepath=results_filepath,
-            request_url=request_url,
-            api_key=api_key,
-            max_requests_per_minute=float(90000),
-            max_tokens_per_minute=float(170000),
-            token_encoding_name="cl100k_base",
-            max_attempts=int(5),
-            logging_level=int(20),
-        )
-    )
-    print("API requests processed and results saved.")
-
-    # Load the results from the API processing.
-    print("\nLoading results from OpenAI processing...")
-    results_df = load_openai_results_jsonl(results_filepath)
-    print("Results loaded into DataFrame:")
-    print(results_df)
-
-    # Merge the original DataFrame with the API results.
-    print("\nMerging original DataFrame with API results...")
-    merged_df = merge_df_with_openai_results(df_prompted, payload_df, results_df, "customer_prompt")
-    print("Merged DataFrame with API results:")
+    merged_df = process_and_merge_llm_responses(df= df_prompted,
+                                column_name= "customer_prompt",
+                                system_prompt = system_prompt,
+                                requests_filepath = requests_filepath,
+                                results_filepath = results_filepath,
+                                api_key=api_key,)
     print(merged_df)
-
 
