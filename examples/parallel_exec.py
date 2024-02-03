@@ -38,6 +38,20 @@ if __name__ == "__main__":
     print(f"API Key: {api_key}")
     client = openai.Client(api_key=api_key)
 
+    script_dir = os.getcwd()
+    # Navigate one directory up to reach /cynde from /cynde/experiments
+    parent_dir = os.path.dirname(script_dir)
+
+    # Define the cache directory path as /cynde/cache
+    cache_dir = os.path.join(parent_dir, "cache")
+
+    # Ensure the cache directory exists, create if it doesn't
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Define file paths within the /cynde/cache directory
+    requests_filepath = os.path.join(cache_dir, "chat_payloads.jsonl")
+    results_filepath = os.path.join(cache_dir, "openai_results.jsonl")
+
     # Generate a demo DataFrame with customer feedback data.
     df = generate_demo_df()
     print("Initial DataFrame:")
@@ -70,21 +84,19 @@ if __name__ == "__main__":
         print(prompt)
 
     # Prepare chat completion payloads for processing with OpenAI's API.
-    requests_filepath = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\chat_payloads.jsonl"
     print("\nGenerating chat completion payloads...")
     payload_df = generate_chat_payloads_from_column(requests_filepath, df_prompted, "customer_prompt", system_prompt)
     print("Payloads generated and saved to file.")
     print(payload_df)
 
     # Process API requests to generate chat completions.
-    save_filepath = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\openai_results.jsonl"
     request_url = "https://api.openai.com/v1/chat/completions"  # Adjust as needed for your API endpoint.
 
     print("\nProcessing API requests for chat completions...")
     asyncio.run(
         process_api_requests_from_file(
             requests_filepath=requests_filepath,
-            save_filepath=save_filepath,
+            save_filepath=results_filepath,
             request_url=request_url,
             api_key=api_key,
             max_requests_per_minute=float(90000),
@@ -98,7 +110,7 @@ if __name__ == "__main__":
 
     # Load the results from the API processing.
     print("\nLoading results from OpenAI processing...")
-    results_df = load_openai_results_jsonl(save_filepath)
+    results_df = load_openai_results_jsonl(results_filepath)
     print("Results loaded into DataFrame:")
     print(results_df)
 
