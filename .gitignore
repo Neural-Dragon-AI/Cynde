@@ -4,3 +4,5 @@ Cynde.egg-info/SOURCES.txt
 Cynde.egg-info/top_level.txt
 *.pyc
 Cynde.egg-info/dependency_links.txt
+*.jsonl
+*.ndjson
