@@ -1,12 +1,15 @@
 from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
 from cynde.utils.expressions import list_struct_to_string
-from typing import List, Union
+from typing import List, Union, Optional
 import polars as pl
 import json
 import time
 import asyncio
+from instructor.function_calls import openai_schema
+from pydantic import BaseModel, Field
 
-def generate_chat_completion_payloads(filename:str, data:list[str], prompt:str, model_name="gpt-3.5-turbo"):
+
+def generate_chat_completion_payloads(filename:str, data:list[str], prompt:str, model_name="gpt-3.5-turbo-0125"):
     """Hacky in Python with a loop, but it works."""
     with open(filename, "w") as f:
         for x in data:
@@ -21,14 +24,44 @@ def generate_chat_completion_payloads(filename:str, data:list[str], prompt:str, 
             f.write(json_string + "\n")
 
 
-def generate_chat_payloads_from_column(filename:str, df:pl.DataFrame, column_name:str, prompt:str, model_name="gpt-3.5-turbo"):
+
+
+def generate_chat_completion_with_pydantic_payloads(filename:str, data:list[str], prompt:str,pydantic_model:BaseModel, model_name="gpt-3.5-turbo-0125"):
+    """Hacky in Python with a loop, but it works."""
+    
+    schema = openai_schema(pydantic_model).openai_schema
+    print("Using Function Calling",schema["name"])
+    tools = [{
+                "type": "function",
+                "function": schema,
+            }]
+    
+    with open(filename, "w") as f:
+        for x in data:
+            # Create a list of messages for each request
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": str(x)}
+            ]
+
+            # Write the messages to the JSONL file
+            tool_choice={"type": "function", "function": {"name": schema["name"]}}
+            json_string = json.dumps({"model": model_name, "messages": messages, "tools": tools, "tool_choice": tool_choice})
+            f.write(json_string + "\n")
+
+def generate_chat_payloads_from_column(filename:str, df:pl.DataFrame, column_name:str, prompt:str,pydantic_model:Optional[BaseModel]=None, model_name="gpt-3.5-turbo-0125"):
     """Uses the hacky loop to generate chat payloads from a column in a DataFrame. Has to be rewritten using the Polars Rust backend."""
     data = df[column_name].to_list()
-    generate_chat_completion_payloads(filename, data, prompt, model_name)
+    print("Using Pydantic Model inside",pydantic_model)
+    if pydantic_model is None:
+        generate_chat_completion_payloads(filename, data, prompt, model_name)
+    elif pydantic_model is not None:
+        print("Using Pydantic Model")
+        generate_chat_completion_with_pydantic_payloads(filename, data, prompt,pydantic_model, model_name)
+
     #return a dataframe with the generated payloads and the original column name
     #load the generated payloads
     return pl.concat([df.select(pl.col(column_name)), pl.read_ndjson(filename)], how = "horizontal").select(pl.col(column_name),list_struct_to_string("messages"))
-
 
 def load_openai_results_jsonl(file_path: str) -> pl.DataFrame:
     # Lists to store the extracted data
@@ -63,7 +96,7 @@ def merge_df_with_openai_results(df:pl.DataFrame,payload_df:pl.DataFrame, openai
     #then left join the resulting dataframe with the original dataframe over the prompt column
     return df.join(payload_df.join(openai_results,on="str_messages", how="left").select(pl.all().exclude("str_messages")), on=prompt_column, how="left")
 
-def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_prompt: str, requests_filepath: str, results_filepath: str, api_key: str,model_name="gpt-3.5-turbo") -> pl.DataFrame:
+def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_prompt: str, requests_filepath: str, results_filepath: str, api_key: str, pydantic_model:Optional[BaseModel]=None, model_name="gpt-3.5-turbo-0125") -> pl.DataFrame:
     """
     Wrapper function to generate chat payloads from a DataFrame column, process them with LLM, and merge the results back into the DataFrame with timing for each step and overall timing.
 
@@ -86,7 +119,8 @@ def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_p
     # Generate chat payloads from the specified DataFrame column
     print("Generating chat completion payloads...")
     start_time = time.time()
-    payload_df = generate_chat_payloads_from_column(requests_filepath, df, column_name, system_prompt, model_name)
+    print("Using Pydantic Model before calling",pydantic_model)
+    payload_df = generate_chat_payloads_from_column(requests_filepath, df, column_name, system_prompt,pydantic_model, model_name)
     end_time = time.time()
     print(f"Chat completion payloads generated in {end_time - start_time:.2f} seconds.")
 
