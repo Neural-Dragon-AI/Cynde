@@ -118,9 +118,13 @@ Cynde offers a sophisticated mechanism for enriching Polars data frames with dat
 - **Textual Outputs:** Cynde can invoke language models in chat completion mode to append direct natural language responses to data frames, facilitating the enrichment of datasets with nuanced textual information.
 
 ```python
+from cynde.functional.generate import process_and_merge_llm_responses
+
 system_prompt = "Evaluate the following customer feedback return a True or False based on the sentiment:"
+
 requests_filepath = os.path.join(cache_dir, "chat_payloads.jsonl")
 results_filepath = os.path.join(cache_dir, "openai_results.jsonl")
+
 generated_df = process_and_merge_llm_responses(df= df_prompted,
                                 column_name= "customer_prompt",
                                 system_prompt = system_prompt,
