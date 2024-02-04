@@ -40,17 +40,16 @@ if __name__ == "__main__":
 
     script_dir = os.getcwd()
     # Navigate one directory up to reach /cynde from /cynde/experiments
-    parent_dir = os.path.dirname(script_dir)
 
     # Define the cache directory path as /cynde/cache
-    cache_dir = os.path.join(parent_dir, "cache")
+    cache_dir = os.path.join(script_dir, "cache")
 
     # Ensure the cache directory exists, create if it doesn't
     os.makedirs(cache_dir, exist_ok=True)
 
     # Define file paths within the /cynde/cache directory
-    requests_filepath = os.path.join(cache_dir, "chat_payloads.jsonl")
-    results_filepath = os.path.join(cache_dir, "openai_results.jsonl")
+    requests_filepath = os.path.join(cache_dir, "__chat_payloads.jsonl")
+    results_filepath = os.path.join(cache_dir, "__openai_results.jsonl")
 
     # Generate a demo DataFrame with customer feedback data.
     df = generate_demo_df()
