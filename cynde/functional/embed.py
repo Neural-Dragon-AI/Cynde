@@ -1,7 +1,7 @@
 import time
 from typing import List, Union, Any, Optional
 import polars as pl
-from cynde.models.embedders import get_embedding_single, get_embedding_list
+from cynde.models.embedders import  get_embedding_list
 from openai import Client
 
 def create_embedding_df_from_column(

@@ -1,4 +1,5 @@
 from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
+from cynde.async_tools.oai_types import ChatCompletion
 from cynde.utils.expressions import list_struct_to_string
 from typing import List, Union, Optional
 import polars as pl
@@ -7,6 +8,7 @@ import time
 import asyncio
 from instructor.function_calls import openai_schema
 from pydantic import BaseModel, Field
+
 
 
 def generate_chat_completion_payloads(filename:str, data:list[str], prompt:str, model_name="gpt-3.5-turbo-0125"):
@@ -22,8 +24,6 @@ def generate_chat_completion_payloads(filename:str, data:list[str], prompt:str, 
             # Write the messages to the JSONL file
             json_string = json.dumps({"model": model_name, "messages": messages})
             f.write(json_string + "\n")
-
-
 
 
 def generate_chat_completion_with_pydantic_payloads(filename:str, data:list[str], prompt:str,pydantic_model:BaseModel, model_name="gpt-3.5-turbo-0125"):
@@ -63,11 +63,13 @@ def generate_chat_payloads_from_column(filename:str, df:pl.DataFrame, column_nam
     #load the generated payloads
     return pl.concat([df.select(pl.col(column_name)), pl.read_ndjson(filename)], how = "horizontal").select(pl.col(column_name),list_struct_to_string("messages"))
 
+
 def load_openai_results_jsonl(file_path: str) -> pl.DataFrame:
     # Lists to store the extracted data
     messages = []
     choices = []
     usage = []
+    results = []
 
     # Open and read the JSONL file line by line
     with open(file_path, 'r') as file:
@@ -77,7 +79,7 @@ def load_openai_results_jsonl(file_path: str) -> pl.DataFrame:
             
             # Append the required information to the lists
             messages.append(data[0]["messages"])  # First dictionary in the list
-            
+            results.append(data[1])  # Second dictionary in the list
             # For list2, ensure the "choices" key exists and has at least one element to extract the "message"
             if 'choices' in data[1] and len(data[1]['choices']) > 0:
                 choices.append(data[1]['choices'][0]['message'])
@@ -87,9 +89,22 @@ def load_openai_results_jsonl(file_path: str) -> pl.DataFrame:
                 usage.append(data[1]['usage'])
 
 
-    df_out = pl.DataFrame({"messages": messages, "choices": choices, "usage": usage})
+    df_out = pl.DataFrame({"messages": messages, "choices": choices, "usage": usage, "results": results})
     df_out = df_out.with_columns(list_struct_to_string("messages"))
     return df_out
+
+# Function to load and parse the JSON lines file
+
+def load_openai_results_jsonl_pydantic(file_path: str) -> List[ChatCompletion]:
+    completions = []
+    with open(file_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            data = json.loads(line)
+            # Assuming the second element in each list is the one to parse
+            chat_completion_data = data[1]
+            completion = ChatCompletion.model_validate(chat_completion_data)
+            completions.append(completion)
+    return completions
 
 def merge_df_with_openai_results(df:pl.DataFrame,payload_df:pl.DataFrame, openai_results:pl.DataFrame, prompt_column:str) -> pl.DataFrame:
     #first left join the payloads dataframe with the openairesults over the str_messages column and drop the str_messages column
