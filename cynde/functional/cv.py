@@ -1,7 +1,9 @@
 import polars as pl
 import numpy as np
 from typing import List, Tuple, Union
-
+import time
+from cynde.functional.classification import get_features, fit_clf
+import os
 
 def shuffle_frame(df:pl.DataFrame):
     return df.sample(fraction=1,shuffle=True)
@@ -105,3 +107,83 @@ def get_fold_name_ps(group_purged:List[str],
                                                                                               "_".join(group_stratified),
                                                                                               replica_stratified,
                                                                                               fold_stratified)
+def train_opis_cv(df:pl.DataFrame,
+                  embeddings:List[List[str]],
+                  classifier:str,
+                  group_outer:List[str],k_outer:int,group_inner:List[str],k_inner:int,r_outer:int =1, r_inner:int =1,
+                  save_name:str="results.parquet"):
+    out = outer_purged_inner_stratified_cv(df,group_outer,k_outer,group_inner,k_inner,r_outer,r_inner)
+    results_df_schema = {"classifier":pl.Utf8,
+                         "fold_name":pl.Utf8,
+                            "input_features_name":pl.Utf8,
+                            "accuracy_train":pl.Float64,
+                            "accuracy_val":pl.Float64,
+                            "accuracy_test":pl.Float64,
+                            "mcc_train":pl.Float64,
+                            "mcc_val":pl.Float64,
+                            "mcc_test":pl.Float64,
+                            "train_index":pl.List(pl.UInt32),
+                            "val_index":pl.List(pl.UInt32),
+                            "test_index":pl.List(pl.UInt32),
+                            "train_time":pl.Utf8,
+                            "pred_time":pl.Utf8,
+                            "eval_time":pl.Utf8,
+                            "total_cls_time":pl.Utf8,
+                            "k_outer":pl.Int64,
+                            "k_inner":pl.Int64,
+                            "r_outer":pl.Int64,
+                            "r_inner":pl.Int64,
+                            "feature_time":pl.Utf8,
+                            "total_fold_time":pl.Utf8,}
+    results_df = pl.DataFrame(schema = results_df_schema)
+    pred_df = out.select(pl.col("cv_index"))
+    
+    #outer replica loop
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    start_fold_time = time.time()
+                    fold_name = get_fold_name_ps(group_outer,r_o,k_o,group_inner,r_i,k_i)
+                    
+                    fold_frame = out.select(pl.col("cv_index"),pl.col(fold_name))
+                    df_train = out.filter(pl.col(fold_name)=="train")
+                    df_val = out.filter(pl.col(fold_name)=="val")
+                    df_test = out.filter(pl.col(fold_name)=="test")
+                    for embedding in embeddings:
+                        start_feature_time = time.time()
+                        x_tr, y_tr = get_features(df_train,embedding,[])
+                        x_val, y_val = get_features(df_val,embedding,[])
+                        x_te, y_te = get_features(df_test,embedding,[])
+                        end_feature_time = time.time()
+                        human_readable_feature_time = time.strftime("%H:%M:%S", time.gmtime(end_feature_time-start_feature_time))
+                        embedding_name = "_".join(embedding)
+                        print(f"Training classifier {classifier} with features {embedding_name}")
+                        pred_df_col,results_df_row = fit_clf(x_tr, y_tr, x_val, y_val,x_te, y_te,classifier=classifier,fold_frame=fold_frame,input_features_name=embedding_name)
+                        pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
+                        end_fold_time = time.time()
+                        human_readable_fold_time = time.strftime("%H:%M:%S", time.gmtime(end_fold_time-start_fold_time))
+                        print(f"Total fold time: {human_readable_fold_time}")
+                        time_dict = {"feature_time":human_readable_feature_time,"total_fold_time":human_readable_fold_time}
+                        fold_meta_data_df = pl.DataFrame({"k_outer":[k_o],"k_inner":[k_i],"r_outer":[r_o],"r_inner":[r_i],"time":[time_dict]}).unnest("time")
+                        #hcat the fold_meta_data_df to results_df_row but we unnest time from both first
+                        results_df_row = pl.concat([results_df_row,fold_meta_data_df],how="horizontal")                   
+                        results_df = results_df.vstack(results_df_row)
+
+    #add_time-stamp to name
+    time_stamp_str_url_compatible = time.strftime("%Y-%m-%d_%H-%M-%S")
+    save_name_res = "results_"+time_stamp_str_url_compatible+"_"+save_name
+    save_name_pred = "predictions_"+time_stamp_str_url_compatible+"_"+save_name
+    print(f"Saving results to {save_name_res}")
+    print(f"Saving predictions to {save_name_pred}")
+    #use os to merge filenames with data_processed folder
+    save_name_res = os.path.join("data_processed",save_name_res)
+    save_name_pred = os.path.join("data_processed",save_name_pred)
+    results_df.write_parquet(save_name_res)
+    pred_df.write_parquet(save_name_pred)
+    joined_df = df.join(out, on="cv_index", how="left")
+    joined_df = joined_df.join(pred_df, on="cv_index", how="left")
+    save_name_joined_df = "joined_"+time_stamp_str_url_compatible+"_"+save_name
+    save_name_joined_df = os.path.join("data_processed",save_name_joined_df)
+    joined_df.write_parquet(save_name_joined_df)
+    return results_df,pred_df
