@@ -12,9 +12,9 @@ from sklearn.gaussian_process.kernels import RBF
 from sklearn.neural_network import MLPClassifier
 import polars as pl
 import time
-from typing import Tuple
+from typing import Tuple, Optional
 
-def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str]):
+def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str],return_encoder:Optional[bool] = False,cat_encoder:Optional[OneHotEncoder]=None) -> Tuple[np.ndarray,np.ndarray]:
         # print(f"Number of samples inside geat_feature: {df.shape[0]}")
         y_final = df['target'].to_numpy()
         # print(f"Number of samples for the test set inside geat_feature: {y_final.shape[0]}")
@@ -27,10 +27,12 @@ def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[
             embeddings_np = np.concatenate(embeddings,axis=1)
         
         # Selecting only the categorical columns and the target
+        encoder = None
         if len(categorical_cols)>0:
             X = df.select(pl.col(categorical_cols))
             # One-hot encoding the categorical variables
-            encoder = OneHotEncoder()
+            if cat_encoder is None:
+                encoder = OneHotEncoder()
             X_encoded = encoder.fit_transform(X)
             X_encoded = X_encoded.toarray()
         #case 1 only embeddings
@@ -44,6 +46,9 @@ def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[
             X_final = np.concatenate([embeddings_np, X_encoded], axis=1)
         else:
             raise ValueError("No features selected")
+        if return_encoder:
+           
+            return X_final,y_final,encoder
         return X_final,y_final
 
 def fit_clf(X_train, y_train, X_val, y_val,X_test, y_test,fold_frame:pl.DataFrame,classifier:str="RandomForest",classifer_hp:dict={},input_features_name:str="") -> Tuple[pl.DataFrame,pl.DataFrame]:

@@ -2,7 +2,7 @@ import polars as pl
 import numpy as np
 from typing import List, Tuple, Union, Dict, Any
 import time
-from cynde.functional.classification import get_features, fit_clf
+from cynde.functional.classify import get_features, fit_clf
 import os
 
 def shuffle_frame(df:pl.DataFrame):
@@ -234,9 +234,9 @@ def train_nested_cv(df:pl.DataFrame,
                         numerical = inp.get("numerical",[])+inp.get("embeddings",[])
                         categorical = inp.get("categorical",[])
                         feature_name = "_".join(numerical+categorical)
-                        x_tr, y_tr = get_features(df_train,numerical,categorical)
-                        x_val, y_val = get_features(df_val,numerical,categorical)
-                        x_te, y_te = get_features(df_test,numerical,categorical)
+                        x_tr, y_tr,cat_encoder = get_features(df_train,numerical,categorical,return_encoder=True)
+                        x_val, y_val = get_features(df_val,numerical,categorical,cat_encoder=cat_encoder)
+                        x_te, y_te = get_features(df_test,numerical,categorical,cat_encoder=cat_encoder)
 
                         for model,hp_list in models.items():
                             for hp in hp_list:

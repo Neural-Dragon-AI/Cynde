@@ -2,5 +2,6 @@
 from .embed import *
 from .prompt import *
 from .cv import *
-from .classification import *
+from .classify import *
 from .generate import *
+from .results import *
