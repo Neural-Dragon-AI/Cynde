@@ -6,3 +6,4 @@ Cynde.egg-info/top_level.txt
 Cynde.egg-info/dependency_links.txt
 *.jsonl
 *.ndjson
+*.parquet

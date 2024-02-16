@@ -39,7 +39,7 @@ def create_embedding_df_from_column(
 def embed_columns(
     df: pl.DataFrame, 
     column_names: List[Union[str, List[str]]], 
-    model: str = "text-embedding-3-small", 
+    models: Union[str,list[str]] = "text-embedding-3-small", 
     batch_size: int = 100, 
     separator: str = " ", 
     client: Optional[Client] = None
@@ -58,6 +58,8 @@ def embed_columns(
     Returns:
     - pl.DataFrame: The input DataFrame with new columns added for the embeddings of the specified (and potentially merged) columns.
     """
+    if isinstance(models, str):
+        models = [models]
     new_column_names = []
     for column_name in column_names:
         if isinstance(column_name, list):
@@ -71,8 +73,9 @@ def embed_columns(
             df = df.with_columns(expression)
         else:
             new_column_names.append(column_name)
-
+    
     for column_name in new_column_names:
-        embeddings_df = create_embedding_df_from_column(df, column_name, model=model, batch_size=batch_size, client=client)
-        df = df.join(embeddings_df, on=column_name, how="left")
+        for model in models:
+            embeddings_df = create_embedding_df_from_column(df, column_name, model=model, batch_size=batch_size, client=client)
+            df = df.join(embeddings_df, on=column_name, how="left")
     return df

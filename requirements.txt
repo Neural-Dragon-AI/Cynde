@@ -1,3 +1,4 @@
 polars
 openai
 instructor
+datasets

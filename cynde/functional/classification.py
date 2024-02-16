@@ -14,15 +14,14 @@ import polars as pl
 import time
 from typing import Tuple
 
-def get_features(df:pl.DataFrame,embedding_cols:list[str],categorical_cols:list[str]):
+def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str]):
         # print(f"Number of samples inside geat_feature: {df.shape[0]}")
-        cv_index = df['cv_index']
         y_final = df['target'].to_numpy()
         # print(f"Number of samples for the test set inside geat_feature: {y_final.shape[0]}")
         #get train embeddings
         embeddings = []
-        if len(embedding_cols)>0:
-            for col in embedding_cols:
+        if len(numerical_cols)>0:
+            for col in numerical_cols:
                 embedding_np = np.array(df[col].to_list())
                 embeddings.append(embedding_np)
             embeddings_np = np.concatenate(embeddings,axis=1)
@@ -35,30 +34,38 @@ def get_features(df:pl.DataFrame,embedding_cols:list[str],categorical_cols:list[
             X_encoded = encoder.fit_transform(X)
             X_encoded = X_encoded.toarray()
         #case 1 only embeddings
-        if len(categorical_cols)==0 and len(embedding_cols)>0:
+        if len(categorical_cols)==0 and len(numerical_cols)>0:
             X_final = embeddings_np
         #case 2 only categorical
-        elif len(categorical_cols)>0 and len(embedding_cols)==0:
+        elif len(categorical_cols)>0 and len(numerical_cols)==0:
             X_final = X_encoded
         #case 3 both
-        elif len(categorical_cols)>0 and len(embedding_cols)>0:
+        elif len(categorical_cols)>0 and len(numerical_cols)>0:
             X_final = np.concatenate([embeddings_np, X_encoded], axis=1)
         else:
             raise ValueError("No features selected")
         return X_final,y_final
 
-def fit_clf(X_train, y_train, X_val, y_val,X_test, y_test,fold_frame:pl.DataFrame,classifier:str="RandomForest",input_features_name:str="") -> Tuple[pl.DataFrame,pl.DataFrame]:
+def fit_clf(X_train, y_train, X_val, y_val,X_test, y_test,fold_frame:pl.DataFrame,classifier:str="RandomForest",classifer_hp:dict={},input_features_name:str="") -> Tuple[pl.DataFrame,pl.DataFrame]:
     start_time = time.time()
     # Initialize the Random Forest classifier
     if classifier=="RandomForest":
-        clf = RandomForestClassifier(random_state=777, n_estimators=1000, max_depth=15, n_jobs=-1)
+        if classifer_hp is None:
+            classifer_hp = {"random_state":777,"n_estimators":100,"max_depth":5,"n_jobs":-1}
+        clf = RandomForestClassifier(**classifer_hp)
+        
     elif classifier == "NearestNeighbors":
-        clf = KNeighborsClassifier(n_neighbors=7)
+        if classifer_hp is None:
+            classifer_hp = {"n_neighbors":7}
+        clf = KNeighborsClassifier(**classifer_hp)
     elif classifier == "MLP":
-        clf = MLPClassifier(alpha=1, max_iter=1000, random_state=42, hidden_layer_sizes=(1000, 500))
-
+        if classifer_hp is None:
+            classifer_hp = {"alpha":1, "max_iter":1000, "random_state":42, "hidden_layer_sizes":(1000, 500)}
+        clf = MLPClassifier(**classifer_hp)
+    #create the classifier_hp_name from the dictionary
+    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifer_hp.items()])
     fold_name = fold_frame.columns[1]
-    pred_column_name = "{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier)
+    pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
     clf = make_pipeline(StandardScaler(), clf)
     train_index_series = fold_frame.filter(pl.col(fold_name)=="train")["cv_index"]
     val_index_series = fold_frame.filter(pl.col(fold_name)=="val")["cv_index"]
@@ -102,7 +109,9 @@ def fit_clf(X_train, y_train, X_val, y_val,X_test, y_test,fold_frame:pl.DataFram
                  "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
 
     results_df = pl.DataFrame({"classifier":[classifier],
+                               "classifier_hp":[classifier_hp_name],
                                "fold_name":[fold_name],
+                               "pred_name":[pred_column_name],
                                "input_features_name":[input_features_name],
                                "accuracy_train":[accuracy_train],
                                 "accuracy_val":[accuracy_val],
