@@ -18,7 +18,6 @@ def slice_frame(df:pl.DataFrame, num_slices:int, shuffle:bool = False, explode:b
     else:
         return [df.slice(indexes[i],indexes[i+1]-indexes[i]).select(pl.col("cv_index")) for i in range(len(indexes)-1)]
 
-
 def hacky_list_relative_slice(list: List[int], k: int):
     slices = {}
     slice_size = len(list) // k
@@ -157,6 +156,7 @@ def nested_cv(df:pl.DataFrame, cv_type: Tuple[str,str], group_outer:List[str],k_
         return df.join(cv_df, on=cv_columns, how="left")
     else:
         return cv_df.sort("cv_index")
+    
 def get_fold_name_cv(group_outer:List[str],
                     cv_type: Tuple[str,str],
                     r_outer:int,
