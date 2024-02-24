@@ -259,7 +259,8 @@ def train_nested_cv(df:pl.DataFrame,
     save_name_joined_df = "joined_"+time_stamp_str_url_compatible+"_"+save_name+".parquet"
     #use os to merge filenames with data_processed folder
     #goes up one directory and then into data_processed
-    up_one = os.path.join("..","data_processed")
+    #retrive the path of teh cynde package
+    up_one = os.path.join(os.getcwd(),"data_processed")
     save_name_res = os.path.join(up_one,save_name_res)
     save_name_pred = os.path.join(up_one,save_name_pred)
     save_name_joined_df = os.path.join(up_one,save_name_joined_df)
