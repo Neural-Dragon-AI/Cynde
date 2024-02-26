@@ -95,7 +95,6 @@ def embed_columns(
     column_names: List[Union[str, List[str]]], 
     models: Union[str, List[str]] = "text-embedding-3-small",
     cache_dir: str = os.path.join(os.path.dirname(os.getcwd()), "cache"),
-    separator: str = " ", 
     api_key: str = "<your_api_key_here>", # Assume API key is passed as a parameter or set elsewhere
 ) -> pl.DataFrame:
     """
