@@ -1,8 +1,8 @@
 import polars as pl
 import numpy as np
-from typing import List, Tuple, Union, Dict, Any
+from typing import List, Tuple, Union, Dict, Any, Generator, Optional
 import time
-from cynde.functional.classify import get_features, fit_clf
+from cynde.functional.classify import get_features, fit_clf,fit_clf_from_np, fold_to_indices, preprocess_dataset
 import os
 
 def shuffle_frame(df:pl.DataFrame):
@@ -214,7 +214,8 @@ def train_nested_cv(df:pl.DataFrame,
                     k_inner:int,
                     r_outer:int =1,
                     r_inner:int =1,
-                    save_name:str="nested_cv_out") -> Tuple[pl.DataFrame,pl.DataFrame]:
+                    save_name:str="nested_cv_out",
+                    base_path:Optional[str]=None) -> Tuple[pl.DataFrame,pl.DataFrame]:
     
     df = check_add_cv_index(df)
     pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
@@ -242,7 +243,7 @@ def train_nested_cv(df:pl.DataFrame,
                             for hp in hp_list:
                                 pred_df_col,results_df_row = fit_clf(x_tr, y_tr, x_val, y_val,x_te, y_te,
                                                                      classifier=model,
-                                                                     classifer_hp= hp,
+                                                                     classifier_hp= hp,
                                                                      fold_frame=fold_frame,
                                                                      input_features_name=feature_name)
                                 
@@ -260,7 +261,10 @@ def train_nested_cv(df:pl.DataFrame,
     #use os to merge filenames with data_processed folder
     #goes up one directory and then into data_processed
     #retrive the path of teh cynde package
-    up_one = os.path.join(os.getcwd(),"data_processed")
+    if base_path is not None:
+        up_one = os.path.join(base_path,"data_processed")
+    else:
+        up_one = os.path.join(os.getcwd(),"data_processed")
     save_name_res = os.path.join(up_one,save_name_res)
     save_name_pred = os.path.join(up_one,save_name_pred)
     save_name_joined_df = os.path.join(up_one,save_name_joined_df)
@@ -272,3 +276,255 @@ def train_nested_cv(df:pl.DataFrame,
 
 
 
+def generate_folds(cv_df: pl.DataFrame, cv_type: Tuple[str, str], inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                   group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int, r_outer: int, r_inner: int) -> Generator:
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
+                    fold_frame = cv_df.select(pl.col("cv_index"), pl.col(fold_name))
+                    df_train, df_val, df_test = fold_to_dfs(cv_df, fold_name)
+                    for inp in inputs:
+                        numerical = inp.get("numerical", []) + inp.get("embeddings", [])
+                        categorical = inp.get("categorical", [])
+                        feature_name = "_".join(numerical + categorical)
+                        x_tr, y_tr, cat_encoder = get_features(df_train, numerical, categorical, return_encoder=True)
+                        x_val, y_val = get_features(df_val, numerical, categorical, cat_encoder=cat_encoder)
+                        x_te, y_te = get_features(df_test, numerical, categorical, cat_encoder=cat_encoder)
+
+                        fold_meta = {
+                            "r_outer": r_o,
+                            "k_outer": k_o,
+                            "r_inner": r_i,
+                            "k_inner": k_i,
+                            "embeddings": inp.get("embeddings", [])
+                        }
+                        
+                        yield fold_name, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
+
+
+def save_results(df:pl.DataFrame,results_df: pl.DataFrame, pred_df: pl.DataFrame, save_name: str, base_path:Optional[str]=None):
+    time_stamp_str_url_compatible = time.strftime("%Y-%m-%d_%H-%M-%S")
+    save_name_res = f"results_{time_stamp_str_url_compatible}_{save_name}.parquet"
+    save_name_pred = f"predictions_{time_stamp_str_url_compatible}_{save_name}.parquet"
+    save_name_joined_df = f"joined_{time_stamp_str_url_compatible}_{save_name}.parquet"
+    if base_path is not None:
+        up_one = os.path.join(base_path, "data_processed")
+    else:
+        up_one = os.path.join(os.getcwd(), "data_processed")
+    save_name_res = os.path.join(up_one, save_name_res)
+    save_name_pred = os.path.join(up_one, save_name_pred)
+    save_name_joined_df = os.path.join(up_one, save_name_joined_df)
+    print(f"Saving results to {save_name_res}")
+    results_df.write_parquet(save_name_res)
+    pred_df.write_parquet(save_name_pred)
+    df.join(pred_df, on="cv_index", how="left").write_parquet(save_name_joined_df)
+
+def fit_models(models: Dict[str, List[Dict[str, Any]]], fold_frame: pl.DataFrame, feature_name: str,
+               x_tr: np.ndarray, y_tr: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, x_te: np.ndarray, y_te: np.ndarray,
+               fold_meta: Dict[str, Any]) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
+    pred_list = []
+    results_list = []
+    for model, hp_list in models.items():
+        for hp in hp_list:
+            pred_df_col, results_df_row = fit_clf(x_tr, y_tr, x_val, y_val, x_te, y_te,
+                                                  classifier=model,
+                                                  classifier_hp=hp,
+                                                  fold_frame=fold_frame,
+                                                  input_features_name=feature_name)
+            pred_list.append(pred_df_col)
+            
+            fold_meta_data_df = pl.DataFrame({
+                "k_outer": [fold_meta["k_outer"]],
+                "k_inner": [fold_meta["k_inner"]],
+                "r_outer": [fold_meta["r_outer"]],
+                "r_inner": [fold_meta["r_inner"]]
+            })
+            
+            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
+            results_list.append(results_df_row)
+    return pred_list, results_list
+
+
+
+
+
+
+
+def train_nested_cv_simple(df: pl.DataFrame,
+                           cv_type: Tuple[str, str],
+                           inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                           models: Dict[str, List[Dict[str, Any]]],
+                           group_outer: List[str],
+                           k_outer: int,
+                           group_inner: List[str],
+                           k_inner: int,
+                           r_outer: int = 1,
+                           r_inner: int = 1,
+                           save_name: str = "nested_cv_out",
+                           base_path: Optional[str] = None,
+                           skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    start_time = time.time()
+    df = check_add_cv_index(df)
+    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
+    
+    cv_df = df.join(pred_df, on="cv_index", how="left")
+    results_df = pl.DataFrame(schema=RESULTS_SCHEMA)
+    cv_creation_time = time.time()
+    print(f"cv_creation_time: {cv_creation_time - start_time}")
+    all_pred_list = []
+    all_results_list = []
+
+    for fold_info in generate_folds(cv_df, cv_type, inputs, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner):
+        fold_name, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta = fold_info
+        if not skip_class:
+            pred_list, results_list = fit_models(models, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta)
+            all_pred_list.extend(pred_list)
+            all_results_list.extend(results_list)
+    fit_time = time.time()
+    print(f"fit_time: {fit_time - cv_creation_time}")
+    print(f"average time per fold: {(fit_time - cv_creation_time) / (k_outer * k_inner * r_outer * r_inner)}")
+
+    # Aggregate results
+    for results_df_row in all_results_list:
+        results_df = results_df.vstack(results_df_row)
+
+    for pred_df_col in all_pred_list:
+        pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
+    aggregation_time = time.time()
+    print(f"aggregation_time: {aggregation_time - fit_time}")
+    save_results(df, results_df, pred_df, save_name, base_path=base_path)
+    save_time = time.time()
+    print(f"save_time: {save_time - aggregation_time}")
+    print(f"total_time: {save_time - start_time}")
+    print(f"Total average time per fold: {(save_time - start_time) / (k_outer * k_inner * r_outer * r_inner)}")
+    return results_df, pred_df
+
+def generate_folds_from_np(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
+                    labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
+                    r_outer: int, r_inner: int) -> Generator:
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
+                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
+
+                    # Iterate directly over feature_arrays, as inputs are now preprocessed
+                    for feature_name, X in feature_arrays.items():
+                        y = labels  # Labels are common for all feature sets
+                        # print(f"Feature name: {feature_name}")
+                        # print(f"Shapes: {X.shape}, {y.shape}")
+                        # print(f"Indices: {indices_train.shape}, {indices_val.shape}, {indices_test.shape}")
+                        # Use indices to select the appropriate subsets for the current fold
+                        x_tr, y_tr = X[indices_train,:], y[indices_train]
+                        x_val, y_val = X[indices_val,:], y[indices_val]
+                        x_te, y_te = X[indices_test,:], y[indices_test]
+
+                        fold_meta = {
+                            "r_outer": r_o,
+                            "k_outer": k_o,
+                            "r_inner": r_i,
+                            "k_inner": k_i,
+                            "fold_name": fold_name,
+                            "train_index": pl.Series(indices_train),
+                            "val_index": pl.Series(indices_val),
+                            "test_index": pl.Series(indices_test),
+                        }
+
+                        yield fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
+
+def fit_models_from_np(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
+               x_tr: np.ndarray, y_tr: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, x_te: np.ndarray, y_te: np.ndarray,
+               fold_meta: Dict[str, Any]) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
+    pred_list = []
+    results_list = []
+    for model, hp_list in models.items():
+        for hp in hp_list:
+            # print("before fit_clfrom_np")
+            # print(f"Shapes: {x_tr.shape}, {y_tr.shape}, {x_val.shape}, {y_val.shape}, {x_te.shape}, {y_te.shape}")
+            pred_df_col, results_df_row = fit_clf_from_np(x_tr, y_tr, x_val, y_val, x_te, y_te,
+                                                        fold_metadata=fold_meta,
+                                                        classifier=model,
+                                                        classifier_hp=hp,
+                                                        input_features_name=feature_name)
+            pred_list.append(pred_df_col)
+            fold_meta_data_df = pl.DataFrame({
+                "k_outer": [fold_meta["k_outer"]],
+                "k_inner": [fold_meta["k_inner"]],
+                "r_outer": [fold_meta["r_outer"]],
+                "r_inner": [fold_meta["r_inner"]]
+            })
+            # print("schema", fold_meta_data_df.schema)
+            # print(f"shape of row before concat: {results_df_row.shape}")
+            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
+            # print(f"shape of row after concat: {results_df_row.shape}")
+            
+            results_list.append(results_df_row)
+    return pred_list, results_list
+
+def train_nested_cv_from_np(df: pl.DataFrame,
+                           cv_type: Tuple[str, str],
+                           inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                           models: Dict[str, List[Dict[str, Any]]],
+                           group_outer: List[str],
+                           k_outer: int,
+                           group_inner: List[str],
+                           k_inner: int,
+                           r_outer: int = 1,
+                           r_inner: int = 1,
+                           save_name: str = "nested_cv_out",
+                           base_path: Optional[str] = None,
+                           skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    start_time = time.time()
+    df = check_add_cv_index(df)
+    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
+    cv_df = df.join(pred_df, on="cv_index", how="left")
+    results_df = pl.DataFrame(schema=RESULTS_SCHEMA)
+    print("results schema: ", results_df.schema)
+    print(f"results shape: {results_df.shape}")
+
+    # Preprocess the dataset
+    preprocess_start_time = time.time()
+    feature_arrays, labels, _ = preprocess_dataset(df, inputs)
+    preprocess_end_time = time.time()
+    print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
+
+    all_pred_list = []
+    all_results_list = []
+
+    # Generate folds and fit models
+    folds_generation_start_time = time.time()
+    for fold_info in generate_folds_from_np(cv_df, cv_type, feature_arrays, labels, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner):
+        fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta = fold_info
+        if not skip_class:
+            
+            pred_list, results_list = fit_models_from_np(models,
+                                                        feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta)
+            all_pred_list.extend(pred_list)
+            all_results_list.extend(results_list)
+    folds_generation_end_time = time.time()
+    print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
+    print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
+
+    # Aggregate and save results
+    aggregation_start_time = time.time()
+    for results_df_row in all_results_list:
+        results_df = results_df.vstack(results_df_row)
+
+    for pred_df_col in all_pred_list:
+        pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
+    aggregation_end_time = time.time()
+    print(f"Aggregation of results completed in {aggregation_end_time - aggregation_start_time} seconds")
+
+    save_results_start_time = time.time()
+    save_results(df, results_df, pred_df, save_name, base_path=base_path)
+    save_results_end_time = time.time()
+    print(f"Saving results completed in {save_results_end_time - save_results_start_time} seconds")
+
+    total_end_time = time.time()
+    print(f"Total training and processing time: {total_end_time - start_time} seconds")
+    print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner)} seconds")
+
+    return results_df, pred_df
