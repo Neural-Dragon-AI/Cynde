@@ -10,3 +10,4 @@ Cynde.egg-info/dependency_links.txt
 *.lock
 /build/*
 /cache/*
+/cynde_mount/*

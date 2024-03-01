@@ -64,7 +64,7 @@ def generate_folds_from_np_modal_compatible(models: Dict[str, List[Dict[str, Any
 
                         yield (models, feature_name, indices_train,indices_val,indices_test, fold_meta, mount_directory)
 
-@stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
+@stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"/Users/tommasofurlanello/Documents/Dev/Cynde/cynde_mount", remote_path="/root/cynde_mount")])
 def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
                fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
     from sklearn.preprocessing import StandardScaler
@@ -75,9 +75,9 @@ def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
     from sklearn.metrics import accuracy_score,  matthews_corrcoef
     from sklearn.preprocessing import OneHotEncoder
     import time
-    def load_arrays_from_mount_modal(mount_directory:str, feature_name:str):
-        X = np.load(os.path.join(mount_directory,feature_name+".npy"))
-        y = np.load(os.path.join(mount_directory,"labels.npy"))
+    def load_arrays_from_mount_modal(feature_name:str):
+        X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
+        y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
         return X,y
     def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
             classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
@@ -166,7 +166,7 @@ def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
     
     pred_list = []
     results_list = []
-    X,y = load_arrays_from_mount_modal(mount_directory = mount_directory, feature_name = feature_name)
+    X,y = load_arrays_from_mount_modal(feature_name = feature_name)
     x_tr, y_tr = X[indices_train,:], y[indices_train]
     x_val, y_val = X[indices_val,:], y[indices_val]
     x_te, y_te = X[indices_test,:], y[indices_test]
@@ -259,7 +259,7 @@ def main():
 
         # Generate folds and fit models
         folds_generation_start_time = time.time()
-        fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_arrays, labels, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
+        fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_arrays, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
         if not skip_class:
             all_tuples_list = fit_models_modal.starmap(fit_tasks)
         #all_tuples_list is a list of tuples(list(pred_df),list(results_df)) we want to get to a single list
@@ -288,8 +288,11 @@ def main():
 
         total_end_time = time.time()
         print(f"Total training and processing time: {total_end_time - start_time} seconds")
-        num_models = sum([len(x for x in models.values())])
-        print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner*num_models*len(inputs))} seconds")
+        tot_models =0
+        for model,hp_list in models.items():
+            tot_models += len(hp_list)
+
+        print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner*tot_models*len(inputs))} seconds")
 
         return results_df, pred_df
 
@@ -313,8 +316,8 @@ def main():
                      k_outer = 2,
                      group_inner=["target"],
                      k_inner = 2,
-                     r_outer=1,
-                     r_inner=1,
+                     r_outer=10,
+                     r_inner=10,
                      save_name="test",
                      base_path=cynde_dir,
                      skip_class=False)# 
