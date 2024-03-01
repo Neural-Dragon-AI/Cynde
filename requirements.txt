@@ -2,3 +2,8 @@ polars
 openai
 instructor
 datasets
+setuptools
+tiktoken
+datasets
+ipykernel
+nest_asyncio

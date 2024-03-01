@@ -7,3 +7,6 @@ Cynde.egg-info/dependency_links.txt
 *.jsonl
 *.ndjson
 *.parquet
+*.lock
+/build/*
+/cache/*

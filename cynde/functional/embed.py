@@ -72,6 +72,39 @@ def generate_embedding_batched_payloads_from_column(filename: str, df: pl.DataFr
     
     return result_df
 
+# def generate_embedding_batched_payloads_from_column(filename: str, df: pl.DataFrame, column_name: str, model_name: str = "text-embedding-3-small", batch_size:int=100):
+#     """Generates embedding payloads from a column in a DataFrame and saves them to a JSONL file."""
+#     data = df[column_name].to_list()
+#     batch = []
+#     with open(filename, "w") as f:
+#         for x in data:
+#             # Replace single quotes with double quotes and escape inner double quotes and newline characters
+#             x = x.replace("'", '"').replace('"', '\\"').replace('\n', '\\n')
+#             batch.append(x)
+#             # Check if batch size is reached; note the off-by-one adjustment
+#             if len(batch) == batch_size:
+#                 payload = {"model": model_name, "input": batch}
+#                 f.write(json.dumps(payload) + "\n")
+#                 batch = []  # Reset batch
+
+#         # Handle last batch if it's not empty
+#         if batch:
+#             payload = {"model": model_name, "input": batch}
+#             f.write(json.dumps(payload) + "\n")
+
+#     # Read the JSONL file content into a list of dictionaries
+#     with open(filename, 'r') as f:
+#         json_list = [json.loads(line) for line in f]
+
+#     # Convert the list of dictionaries into a DataFrame
+#     payloads_df = pl.DataFrame(json_list)
+
+#     # Concatenate the original DataFrame column with the generated payloads DataFrame
+#     result_df = pl.concat([df.select(column_name), payloads_df], how="horizontal")
+
+#     return result_df
+
+
 def load_openai_emb_results_jsonl(file_path: str, column_name: str) -> pl.DataFrame:
     # Lists to store the extracted data
     models = []
