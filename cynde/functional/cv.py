@@ -435,6 +435,36 @@ def generate_folds_from_np(cv_df: pl.DataFrame, cv_type: Tuple[str, str], featur
 
                         yield fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
 
+def generate_folds_from_np_modal_compatible(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
+                           labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
+                           r_outer: int, r_inner: int) -> Generator:
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
+                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
+
+                    for feature_name, X in feature_arrays.items():
+                        y = labels
+                        x_tr, y_tr = X[indices_train,:], y[indices_train]
+                        x_val, y_val = X[indices_val,:], y[indices_val]
+                        x_te, y_te = X[indices_test,:], y[indices_test]
+
+                        fold_meta = {
+                            "r_outer": r_o,
+                            "k_outer": k_o,
+                            "r_inner": r_i,
+                            "k_inner": k_i,
+                            "fold_name": fold_name,
+                            "train_index": pl.Series(indices_train),
+                            "val_index": pl.Series(indices_val),
+                            "test_index": pl.Series(indices_test),
+                        }
+
+                        yield (x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta, feature_name)
+
+
 def fit_models_from_np(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
                x_tr: np.ndarray, y_tr: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, x_te: np.ndarray, y_te: np.ndarray,
                fold_meta: Dict[str, Any]) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
