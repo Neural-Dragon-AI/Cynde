@@ -60,7 +60,7 @@ def generate_folds_from_np_modal_compatible(models: Dict[str, List[Dict[str, Any
                             "test_index": pl.Series(indices_test),
                         }
 
-                        yield (models, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta, )
+                        yield (models, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta )
 
 @stub.function(image=datascience_image)
 def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
@@ -165,7 +165,7 @@ def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
     for model, hp_list in models.items():
         for hp in hp_list:
             pred_df_col, results_df_row = fit_clf_from_np_modal(x_tr, y_tr, x_val, y_val, x_te, y_te,
-                                                                fold_meta=fold_meta,
+                                                                fold_metadata=fold_meta,
                                                   classifier=model,
                                                   classifier_hp=hp,
                                                   input_features_name=feature_name)
@@ -254,10 +254,12 @@ def main():
         folds_generation_start_time = time.time()
         fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_arrays, labels, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner)
         if not skip_class:
-            all_results_list = fit_models_modal.starmap(fit_tasks)
-
+            all_tuples_list = fit_models_modal.starmap(fit_tasks)
+        #all_tuples_list is a list of tuples(list(pred_df),list(results_df)) we want to get to a single list
+        for (pred_list,res_list) in all_tuples_list:
+            all_results_list.extend(res_list)
+            all_pred_list.extend(pred_list)
         #flatten the list of lists
-        all_results_list = [item for sublist in all_results_list for item in sublist]
         folds_generation_end_time = time.time()
         print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
         print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
@@ -279,7 +281,8 @@ def main():
 
         total_end_time = time.time()
         print(f"Total training and processing time: {total_end_time - start_time} seconds")
-        print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner)} seconds")
+        num_models = sum([len(x for x in models.values())])
+        print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner*num_models*len(inputs))} seconds")
 
         return results_df, pred_df
 
@@ -290,7 +293,8 @@ def main():
     inputs =[{"numerical":["conversations_text-embedding-3-small_embedding"]},
             {"numerical":["conversations_text-embedding-3-large_embedding"]},
             {"numerical":["conversations_text-embedding-3-small_embedding","conversations_text-embedding-3-large_embedding"]}]
-    inputs = [inputs[0]]
+    # models_dict = {"RandomForest": [{"n_estimators": 10, "max_depth": 5}]}
+    # inputs = [inputs[0]]
 
     # Call the train_nested_cv_from_np function with the required arguments
 
@@ -310,8 +314,8 @@ def main():
 
 
     print("Training completed successfully!")
-    # summary = cf.results_summary(results,by_test_fold=True)
-    # print(summary)
+    summary = cf.results_summary(results)
+    print(summary)
 
 
 
