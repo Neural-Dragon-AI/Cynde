@@ -124,7 +124,6 @@ def derive_cv_columns(group_outer:List[str],group_inner:List[str]):
     return cv_columns,name_group_outer,name_group_inner
 
 
-
 def nested_cv(df:pl.DataFrame, cv_type: Tuple[str,str], group_outer:List[str],k_outer:int,group_inner:List[str],k_inner:int,r_outer:int =1, r_inner:int =1,return_joined : bool = False):
     outer_type,inner_type = validate_cv_type(cv_type)
         
@@ -558,3 +557,35 @@ def train_nested_cv_from_np(df: pl.DataFrame,
     print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner)} seconds")
 
     return results_df, pred_df
+
+
+def generate_folds_from_np_modal_compatible(models: Dict[str, List[Dict[str, Any]]],cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_names: List[str],
+                           group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
+                           r_outer: int, r_inner: int, mount_directory:str) -> Generator:
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
+                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
+
+                    for feature_name in feature_names:
+                        # y = labels
+                        # x_tr, y_tr = X[indices_train,:], y[indices_train]
+                        # x_val, y_val = X[indices_val,:], y[indices_val]
+                        # x_te, y_te = X[indices_test,:], y[indices_test]
+
+                        #create an adequate name for each file and save to .npy in the mount dictory
+
+                        fold_meta = {
+                            "r_outer": r_o,
+                            "k_outer": k_o,
+                            "r_inner": r_i,
+                            "k_inner": k_i,
+                            "fold_name": fold_name,
+                            "train_index": pl.Series(indices_train),
+                            "val_index": pl.Series(indices_val),
+                            "test_index": pl.Series(indices_test),
+                        }
+
+                        yield (models, feature_name, indices_train,indices_val,indices_test, fold_meta, mount_directory)
