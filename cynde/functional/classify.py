@@ -8,7 +8,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 import polars as pl
 import time
-from typing import Tuple, Optional, List, Dict, Union
+from typing import Tuple, Optional, List, Dict, Union, Any
+import os
 
 def fold_to_indices(fold_frame: pl.DataFrame, fold_name: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -259,3 +260,191 @@ def fit_clf_from_np(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata
 
 
 
+def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
+               fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import make_pipeline
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.neural_network import MLPClassifier
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score,  matthews_corrcoef
+    from sklearn.preprocessing import OneHotEncoder
+    import time
+    def load_arrays_from_mount_modal(feature_name:str):
+        X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
+        y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
+        return X,y
+    def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
+            classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
+    
+        start_time = time.time()
+        clf = None
+        #create classifiers 
+        if classifier == "RandomForest":
+            clf = RandomForestClassifier(**(classifier_hp or {"random_state": 777, "n_estimators": 100, "max_depth": 5, "n_jobs": -1}))
+        elif classifier == "NearestNeighbors":
+            clf = KNeighborsClassifier(**(classifier_hp or {"n_neighbors": 7}))
+        elif classifier == "MLP":
+            clf = MLPClassifier(**(classifier_hp or {"alpha": 1, "max_iter": 1000, "random_state": 42, "hidden_layer_sizes": (1000, 500)}))
+        else:
+            raise ValueError("Classifier not supported")
+        
+        #create names 
+        classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
+        fold_name = fold_metadata["fold_name"]
+        pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
+
+        # Train the classifier using the training set
+        start_train_time = time.time()
+        clf = make_pipeline(StandardScaler(), clf)
+        # print("before training")
+        # print("X_train shape: ", X_train.shape)
+        # print("y_train shape: ", y_train.shape)
+        clf.fit(X_train, y_train)
+        end_train_time = time.time()
+        human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
+
+        # Predictions
+        start_pred_time = time.time()
+        # print("before clf predict")
+        y_pred_train = clf.predict(X_train)
+        y_pred_val = clf.predict(X_val)
+        y_pred_test = clf.predict(X_test)
+        end_pred_time = time.time()
+        human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
+
+        # Evaluation
+        start_eval_time = time.time()
+        # print("before evaluation")
+        accuracy_train = accuracy_score(y_train, y_pred_train)
+        accuracy_val = accuracy_score(y_val, y_pred_val)
+        accuracy_test = accuracy_score(y_test, y_pred_test)
+        mcc_train = matthews_corrcoef(y_train, y_pred_train) 
+        mcc_val = matthews_corrcoef(y_val, y_pred_val) 
+        mcc_test = matthews_corrcoef(y_test, y_pred_test) 
+        end_eval_time = time.time()
+        human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
+        end_time = time.time()
+        human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
+
+        #package predictions
+        pred_train_df = pl.DataFrame({"cv_index":fold_metadata["train_index"],pred_column_name:y_pred_train})
+        pred_val_df = pl.DataFrame({"cv_index":fold_metadata["val_index"],pred_column_name:y_pred_val})
+        pred_test_df = pl.DataFrame({"cv_index":fold_metadata["test_index"],pred_column_name:y_pred_test})
+        pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
+
+        #package results
+
+        time_dict = {"train_time":human_readable_train_time,
+                    "pred_time":human_readable_pred_time,
+                    "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
+
+        results_df = pl.DataFrame({"classifier":[classifier],
+                                "classifier_hp":[classifier_hp_name],
+                                "fold_name":[fold_name],
+                                "pred_name":[pred_column_name],
+                                "input_features_name":[input_features_name],
+                                "accuracy_train":[accuracy_train],
+                                    "accuracy_val":[accuracy_val],
+                                    "accuracy_test":[accuracy_test],
+                                    "mcc_train":[mcc_train],
+                                    "mcc_val":[mcc_val],
+                                    "mcc_test":[mcc_test],
+                                    "train_index":[fold_metadata["train_index"]],
+                                    "val_index":[fold_metadata["val_index"]],
+                                    "test_index":[fold_metadata["test_index"]],
+                                    "time":[time_dict],
+                                    }).unnest("time")
+        
+
+        return pred_df, results_df
+    
+
+def load_arrays_from_mount_modal(feature_name:str):
+        X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
+        y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
+        return X,y
+def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
+        classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
+
+    start_time = time.time()
+    clf = None
+    #create classifiers 
+    if classifier == "RandomForest":
+        clf = RandomForestClassifier(**(classifier_hp or {"random_state": 777, "n_estimators": 100, "max_depth": 5, "n_jobs": -1}))
+    elif classifier == "NearestNeighbors":
+        clf = KNeighborsClassifier(**(classifier_hp or {"n_neighbors": 7}))
+    elif classifier == "MLP":
+        clf = MLPClassifier(**(classifier_hp or {"alpha": 1, "max_iter": 1000, "random_state": 42, "hidden_layer_sizes": (1000, 500)}))
+    else:
+        raise ValueError("Classifier not supported")
+    
+    #create names 
+    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
+    fold_name = fold_metadata["fold_name"]
+    pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
+
+    # Train the classifier using the training set
+    start_train_time = time.time()
+    clf = make_pipeline(StandardScaler(), clf)
+    # print("before training")
+    # print("X_train shape: ", X_train.shape)
+    # print("y_train shape: ", y_train.shape)
+    clf.fit(X_train, y_train)
+    end_train_time = time.time()
+    human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
+
+    # Predictions
+    start_pred_time = time.time()
+    # print("before clf predict")
+    y_pred_train = clf.predict(X_train)
+    y_pred_val = clf.predict(X_val)
+    y_pred_test = clf.predict(X_test)
+    end_pred_time = time.time()
+    human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
+
+    # Evaluation
+    start_eval_time = time.time()
+    # print("before evaluation")
+    accuracy_train = accuracy_score(y_train, y_pred_train)
+    accuracy_val = accuracy_score(y_val, y_pred_val)
+    accuracy_test = accuracy_score(y_test, y_pred_test)
+    mcc_train = matthews_corrcoef(y_train, y_pred_train) 
+    mcc_val = matthews_corrcoef(y_val, y_pred_val) 
+    mcc_test = matthews_corrcoef(y_test, y_pred_test) 
+    end_eval_time = time.time()
+    human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
+    end_time = time.time()
+    human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
+
+    #package predictions
+    pred_train_df = pl.DataFrame({"cv_index":fold_metadata["train_index"],pred_column_name:y_pred_train})
+    pred_val_df = pl.DataFrame({"cv_index":fold_metadata["val_index"],pred_column_name:y_pred_val})
+    pred_test_df = pl.DataFrame({"cv_index":fold_metadata["test_index"],pred_column_name:y_pred_test})
+    pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
+
+    #package results
+
+    time_dict = {"train_time":human_readable_train_time,
+                "pred_time":human_readable_pred_time,
+                "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
+
+    results_df = pl.DataFrame({"classifier":[classifier],
+                            "classifier_hp":[classifier_hp_name],
+                            "fold_name":[fold_name],
+                            "pred_name":[pred_column_name],
+                            "input_features_name":[input_features_name],
+                            "accuracy_train":[accuracy_train],
+                                "accuracy_val":[accuracy_val],
+                                "accuracy_test":[accuracy_test],
+                                "mcc_train":[mcc_train],
+                                "mcc_val":[mcc_val],
+                                "mcc_test":[mcc_test],
+                                "train_index":[fold_metadata["train_index"]],
+                                "val_index":[fold_metadata["val_index"]],
+                                "test_index":[fold_metadata["test_index"]],
+                                "time":[time_dict],
+                                }).unnest("time")
+    
+
+    return pred_df, results_df
