@@ -14,7 +14,7 @@ cv_stub = modal.Stub("distributed_cv")
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
 )
@@ -98,7 +98,8 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
         all_results_list.extend(res_list)
         all_pred_list.extend(pred_list)
     #flatten the list of lists
-    pred_df = pl.concat([pred_df]+all_pred_list, how="horizontal")
+    for frame in all_pred_list:
+        pred_df = pred_df.join(frame, on="cv_index", how="left")
     folds_generation_end_time = time.time()
     print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
     print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
