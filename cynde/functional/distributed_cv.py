@@ -2,19 +2,13 @@ from modal import Image
 import modal
 import polars as pl
 import os
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score,  matthews_corrcoef
-from sklearn.preprocessing import OneHotEncoder
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
 import polars as pl
 import time
-from typing import Tuple, Optional, Dict, List, Generator, Any, Union
+from typing import Tuple, Optional, Dict, List, Any, Union
 from cynde.functional.cv import generate_folds_from_np_modal_compatible, check_add_cv_index, preprocess_dataset, nested_cv, RESULTS_SCHEMA
 from cynde.functional.classify import fit_clf_from_np_modal, load_arrays_from_mount_modal
+
 cv_stub = modal.Stub("distributed_cv")
 
 datascience_image = (
@@ -32,15 +26,7 @@ with datascience_image.imports():
 @cv_stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"/Users/tommasofurlanello/Documents/Dev/Cynde/cynde_mount", remote_path="/root/cynde_mount")])
 def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
                fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-    # from sklearn.preprocessing import StandardScaler
-    # from sklearn.pipeline import make_pipeline
-    # from sklearn.neighbors import KNeighborsClassifier
-    # from sklearn.neural_network import MLPClassifier
-    # from sklearn.ensemble import RandomForestClassifier
-    # from sklearn.metrics import accuracy_score,  matthews_corrcoef
-    # from sklearn.preprocessing import OneHotEncoder
-    # import time
-    
+
     
     pred_list = []
     results_list = []
@@ -80,9 +66,6 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
                         k_inner: int,
                         r_outer: int = 1,
                         r_inner: int = 1,
-                        save_name: str = "nested_cv_out",
-                       
-                        base_path: Optional[str] = None,
                         skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
     start_time = time.time()
     df = check_add_cv_index(df)
@@ -115,9 +98,11 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
         all_results_list.extend(res_list)
         all_pred_list.extend(pred_list)
     #flatten the list of lists
+    pred_df = pl.concat([pred_df]+all_pred_list, how="horizontal")
     folds_generation_end_time = time.time()
     print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
     print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
+
 
 
     # Aggregate and save results

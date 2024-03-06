@@ -46,6 +46,7 @@ def main():
     # inputs = [inputs[0]]
 
     # Call the train_nested_cv_from_np function with the required arguments
+    df = cf.check_add_cv_index(df)
 
     results,pred=train_nested_cv_from_np_modal(df = embedded_df,
                      cv_type=("stratified","stratified"),
@@ -58,14 +59,13 @@ def main():
                      k_inner = 2,
                      r_outer=10,
                      r_inner=10,
-                     save_name="test",
-                     base_path=cynde_dir,
                      skip_class=False)# 
 
 
     print("Training completed successfully!")
     summary = cf.results_summary(results)
     print(summary)
+    cf.save_results(df=df,results_df=results,pred_df=pred,save_name="test",base_path=cynde_dir)
 
 
 

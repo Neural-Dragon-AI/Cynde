@@ -310,8 +310,11 @@ def save_results(df:pl.DataFrame,results_df: pl.DataFrame, pred_df: pl.DataFrame
     save_name_joined_df = f"joined_{time_stamp_str_url_compatible}_{save_name}.parquet"
     if base_path is not None:
         up_one = os.path.join(base_path, "data_processed")
+ 
     else:
         up_one = os.path.join(os.getcwd(), "data_processed")
+    if not os.path.exists(up_one):
+        os.mkdir(up_one)
     save_name_res = os.path.join(up_one, save_name_res)
     save_name_pred = os.path.join(up_one, save_name_pred)
     save_name_joined_df = os.path.join(up_one, save_name_joined_df)
