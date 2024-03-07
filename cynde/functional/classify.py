@@ -11,6 +11,19 @@ import time
 from typing import Tuple, Optional, List, Dict, Union, Any
 import os
 
+def get_hp_classifier_name(classifier_hp:dict) -> str:
+    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
+    return classifier_hp_name
+
+def get_pred_column_name(fold_name:str,input_features_name:str,classifier:str,classifier_hp_name:str) -> str:
+    return  "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
+
+def get_input_name(input_feature:Dict):
+    numerical_cols = input_feature.get("numerical", []) + input_feature.get("embeddings", [])
+    categorical_cols = input_feature.get("categorical", [])
+    feature_name = "_".join(numerical_cols + categorical_cols)
+    return feature_name
+
 def fold_to_indices(fold_frame: pl.DataFrame, fold_name: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Extracts indices for training, validation, and test sets based on fold configuration.
@@ -189,10 +202,10 @@ def fit_clf_from_np(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata
         raise ValueError("Classifier not supported")
     
     #create names 
-    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
+    classifier_hp_name = get_hp_classifier_name(classifier_hp)
     fold_name = fold_metadata["fold_name"]
-    pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-
+    # pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
+    pred_column_name = get_pred_column_name(fold_name,input_features_name,classifier,classifier_hp_name)
     # Train the classifier using the training set
     start_train_time = time.time()
     clf = make_pipeline(StandardScaler(), clf)
@@ -381,6 +394,7 @@ def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_me
     
     #create names 
     classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
+    classifier_hp_name = get_hp_classifier_name(classifier_hp)
     fold_name = fold_metadata["fold_name"]
     pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
 

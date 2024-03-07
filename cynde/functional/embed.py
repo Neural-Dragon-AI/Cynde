@@ -130,7 +130,9 @@ def load_openai_emb_results_jsonl(file_path: str, column_name: str) -> pl.DataFr
                 embeddings.append([])  # Append an empty list if no embedding is found
 
     # Create the DataFrame from the lists
-    df_out = pl.DataFrame({"model": models, "input": inputs, f"{column_name}_{data[0]["model"]}_embedding": embeddings})
+    model_value = data[0]["model"]
+    df_out = pl.DataFrame({"model": models, "input": inputs, f"{column_name}_{model_value}_embedding": embeddings})
+
     return df_out
 
 def load_openai_batched_emb_results_jsonl(file_path: str, column_name: str) -> pl.DataFrame:
@@ -161,11 +163,13 @@ def load_openai_batched_emb_results_jsonl(file_path: str, column_name: str) -> p
             else:
                 # Handle the case for non-standard data formats or missing information
                 print(f"Unexpected data format encountered: {data}")
+    model_key = data[0]["model"]  # Intermediate variable
     df_out = pl.DataFrame({
         "model": models,
         "input": inputs,
-        f"{column_name}_{data[0]["model"]}_embedding": embeddings
+        f"{column_name}_{model_key}_embedding": embeddings  # Using the intermediate variable
     })
+
     return df_out
 
 def merge_df_with_openai_emb_results(df:pl.DataFrame,payload_df:pl.DataFrame, openai_results:pl.DataFrame, prompt_column:str) -> pl.DataFrame:

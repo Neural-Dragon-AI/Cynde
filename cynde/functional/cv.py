@@ -172,8 +172,6 @@ def get_fold_name_cv(group_outer:List[str],
                                                                                    r_inner,
                                                                                    k_inner)
 
-
-
 RESULTS_SCHEMA = {"classifier":pl.Utf8,
                   "classifier_hp":pl.Utf8,
                 "fold_name":pl.Utf8,
