@@ -44,3 +44,31 @@ def get_predictions(joined_df:pl.DataFrame,
                                     raise ValueError(f"Column {pred_col_name} not found in the joined_df")
                                 outs.append((fold_name,pred_col_name))
     return outs
+
+def get_all_predictions_by_inputs_model(joined_df:pl.DataFrame,
+                    cv_type: Tuple[str, str],
+                    inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                    models: Dict[str, List[Dict[str, Any]]],
+                    group_outer: List[str],
+                    k_outer: int,
+                    group_inner: List[str],
+                    k_inner: int,
+                    r_outer: int = 1,
+                    r_inner: int = 1,)  :
+    
+    for input_feature in inputs:
+                        input_name = get_input_name(input_feature)
+                        for model, hp_list in models.items():
+                            for hp in hp_list:
+                                hp_name = get_hp_classifier_name(hp)
+                                pred_cols_by_model =[]
+                                for r_o in range(r_outer):
+                                    for k_o in range(k_outer):
+                                        for r_i in range(r_inner):
+                                            for k_i in range(k_inner):
+                                                fold_name = get_fold_name_cv(group_outer, cv_type, r_o,k_o,group_inner,r_i,k_i)
+                                                pred_col_name = get_pred_column_name(fold_name, input_name, model, hp_name)
+                                                if pred_col_name not in joined_df.columns:
+                                                    raise ValueError(f"Column {pred_col_name} not found in the joined_df")
+                                                pred_cols_by_model.append((fold_name,pred_col_name))
+                                yield input_name,model,hp_name,pred_cols_by_model
