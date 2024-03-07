@@ -11,3 +11,4 @@ Cynde.egg-info/dependency_links.txt
 /build/*
 /cache/*
 /cynde_mount/*
+.DS_Store

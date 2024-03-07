@@ -10,7 +10,7 @@ from cynde.functional.cv import generate_folds_from_np_modal_compatible, check_a
 from cynde.functional.classify import fit_clf_from_np_modal, load_arrays_from_mount_modal
 
 cv_stub = modal.Stub("distributed_cv")
-
+LOCAL_MOUNT_PATH = r"/Users/tommasofurlanello/Documents/Dev/Cynde/cynde_mount"
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
@@ -23,7 +23,7 @@ with datascience_image.imports():
     import sklearn as sk
     import cynde.functional as cf
 
-@cv_stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"/Users/tommasofurlanello/Documents/Dev/Cynde/cynde_mount", remote_path="/root/cynde_mount")])
+@cv_stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(LOCAL_MOUNT_PATH, remote_path="/root/cynde_mount")])
 def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
                fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
 
