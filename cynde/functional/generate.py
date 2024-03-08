@@ -4,6 +4,7 @@ from cynde.utils.expressions import list_struct_to_string
 from typing import List, Union, Optional
 import polars as pl
 import json
+import os
 import time
 import asyncio
 from instructor.function_calls import openai_schema
@@ -111,7 +112,7 @@ def merge_df_with_openai_results(df:pl.DataFrame,payload_df:pl.DataFrame, openai
     #then left join the resulting dataframe with the original dataframe over the prompt column
     return df.join(payload_df.join(openai_results,on="str_messages", how="left").select(pl.all().exclude("str_messages")), on=prompt_column, how="left")
 
-def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_prompt: str, requests_filepath: str, results_filepath: str, api_key: str, pydantic_model:Optional[BaseModel]=None, model_name="gpt-3.5-turbo-0125") -> pl.DataFrame:
+def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_prompt: str, api_key: str, pydantic_model:Optional[BaseModel]=None, model_name="gpt-3.5-turbo-0125") -> pl.DataFrame:
     """
     Wrapper function to generate chat payloads from a DataFrame column, process them with LLM, and merge the results back into the DataFrame with timing for each step and overall timing.
 
@@ -130,6 +131,13 @@ def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_p
     """
     # Start the global timer
     global_start_time = time.time()
+    target_column = column_name
+    requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_requests.jsonl")
+    results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_results.jsonl")
+    if os.path.exists(requests_filepath) or os.path.exists(results_filepath):
+        time_code = time.strftime("%Y-%m-%d_%H-%M-%S")
+        requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_{time_code}_requests.jsonl")
+        results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_{time_code}_results.jsonl")
 
     # Generate chat payloads from the specified DataFrame column
     print("Generating chat completion payloads...")
@@ -138,6 +146,9 @@ def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_p
     payload_df = generate_chat_payloads_from_column(requests_filepath, df, column_name, system_prompt,pydantic_model, model_name)
     end_time = time.time()
     print(f"Chat completion payloads generated in {end_time - start_time:.2f} seconds.")
+
+    
+                
 
     # Process the chat completion payloads asynchronously
     print("Processing chat completion payloads with the LLM...")
