@@ -7,3 +7,5 @@ tiktoken
 datasets
 ipykernel
 nest_asyncio
+scikit-learn
+python-dotenv

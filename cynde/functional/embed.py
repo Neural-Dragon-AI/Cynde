@@ -17,6 +17,7 @@ MAX_INPUT = {
     "text-embedding-ada-002": 8191
 }
 
+
 def generate_embedding_payloads_from_column(filename: str, df: pl.DataFrame, column_name: str, model_name: str = "text-embedding-3-small"):
     """Generates embedding payloads from a column in a DataFrame and saves them to a JSONL file."""
     # Extract the data from the specified column as a list
@@ -250,8 +251,14 @@ def embed_columns(
         for model_name in models:
             
             # Generate file paths for requests and results
-            requests_filepath = os.path.join(cache_dir, f"{target_column}_{model_name}_requests.jsonl")
-            results_filepath = os.path.join(cache_dir, f"{target_column}_{model_name}_results.jsonl")
+            
+            requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_requests.jsonl")
+            results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_results.jsonl")
+            if os.path.exists(requests_filepath) or os.path.exists(results_filepath):
+                time_code = time.strftime("%Y-%m-%d_%H-%M-%S")
+                requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_{time_code}_requests.jsonl")
+                results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_{time_code}_results.jsonl")
+                
             
             # Generate embeddings and merge them into the DataFrame
             df = embed_column(
