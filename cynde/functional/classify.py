@@ -53,7 +53,7 @@ def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str],
         categorical_cols = inp.get("categorical", [])
         feature_name = "_".join(numerical_cols + categorical_cols)
 
-        X_final,_ = get_features(df, numerical_cols, categorical_cols)
+        X_final,_ = get_features(df, numerical_cols, categorical_cols,target_column = target_column)
         
         feature_arrays[feature_name] = X_final
         print(f"Feature array shape for {feature_name}: {X_final.shape}")

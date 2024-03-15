@@ -16,7 +16,7 @@ LOCAL_MOUNT_PATH = os.getenv('MODAL_MOUNT')
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
     
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .env({"CYNDE_DIR": "/opt/cynde"})
@@ -84,6 +84,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
     preprocess_start_time = time.time()
     feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
     #save the arrays to cynde_mount folder
+    print(f"Saving arrays to {mount_dir}")
     for feature_name,feature_array in feature_arrays.items():
         np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
     np.save(os.path.join(mount_dir,"labels.npy"),labels)
