@@ -111,6 +111,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
     preprocess_start_time = time.time()
     if load_preprocess:
         check_preprocessed_np_modal(mount_dir,inputs)
+        feature_names = cf.derive_feature_names(inputs)
     else:
         feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
         #save the arrays to cynde_mount folder
@@ -118,6 +119,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
         for feature_name,feature_array in feature_arrays.items():
             np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
         np.save(os.path.join(mount_dir,"labels.npy"),labels)
+        feature_names = list(feature_arrays.keys())
     preprocess_end_time = time.time()
     print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
 
@@ -126,7 +128,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
 
     # Generate folds and fit models
     folds_generation_start_time = time.time()
-    fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_arrays, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
+    fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_names, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
     if not skip_class:
         all_tuples_list = fit_models_modal.starmap(fit_tasks)
     #all_tuples_list is a list of tuples(list(pred_df),list(results_df)) we want to get to a single list

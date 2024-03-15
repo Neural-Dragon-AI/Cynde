@@ -62,6 +62,14 @@ def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str],
     labels = df[target_column].to_numpy()
     return feature_arrays, labels, encoders
 
+def derive_feature_names(inputs: List[Dict[str, Union[List[str], List[List[str]]]]]) -> List[str]:
+    feature_names = []
+    for inp in inputs:
+        numerical_cols = inp.get("numerical", []) + inp.get("embeddings", [])
+        categorical_cols = inp.get("categorical", [])
+        feature_name = "_".join(numerical_cols + categorical_cols)
+        feature_names.append(feature_name)
+    return feature_names
 
 
 def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str],return_encoder:Optional[bool] = False,cat_encoder:Optional[OneHotEncoder]=None, target_column:str="target") -> Tuple[np.ndarray,np.ndarray]:

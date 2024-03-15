@@ -5,6 +5,7 @@ from .cv import *
 from .classify import *
 from .generate import *
 from .results import *
+
 from dotenv import load_dotenv
 
 load_dotenv()
