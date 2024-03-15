@@ -4,6 +4,7 @@ from typing import List, Tuple, Union, Dict, Any, Generator, Optional
 import time
 from cynde.functional.classify import get_features, fit_clf,fit_clf_from_np, fold_to_indices, preprocess_dataset
 import os
+import math
 
 def shuffle_frame(df:pl.DataFrame):
     return df.sample(fraction=1,shuffle=True)
@@ -91,6 +92,40 @@ def stratified_kfold(df:pl.DataFrame,group:List[str],k:int,shuffle:bool=True,pre
             train_df = train_set.with_columns([pl.lit(target_names[0]).alias(pre_name+"fold_{}".format(i))])
             index_df = index_df.join(train_df.vstack(test_df), on="cv_index", how="left")
     return index_df
+
+def divide_df_by_target(df: pl.DataFrame,target:str) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    if target not in df.columns:
+        raise ValueError(f"Target {target} not in columns")
+    print(f"Total rows: {df.shape[0]}")
+    target_rows = df.filter(pl.col(target)==True)
+    other = df.filter(pl.col(target)==False)
+    print(f"Target {target} rows: {target_rows.shape[0]}")
+    print(f"Other rows: {other.shape[0]}")
+    return target_rows, other
+
+def resample_dataset(df:pl.DataFrame,df_target: pl.DataFrame, df_other:pl.DataFrame, size: int = math.inf) -> pl.DataFrame:
+    size_target,size_other = [df_target.shape[0], df_other.shape[0]]
+    min_size = min(size_target, size_other,size)
+    df_index = sample_dataset_index(df_target, df_other, min_size)
+    return df.filter(pl.col("cv_index").is_in(df_index["cv_index"]))
+
+def sample_dataset_index(df_target: pl.DataFrame, df_other:pl.DataFrame, size: int = math.inf) -> pl.DataFrame:
+    size_target,size_other = [df_target.shape[0], df_other.shape[0]]
+    min_size = min(size_target, size_other,size)
+    return df_target.select(pl.col("cv_index")).sample(min_size).vstack(df_other.select(pl.col("cv_index")).sample(min_size))
+
+def vanilla_resample_kfold(df:pl.DataFrame,group:List[str],k:int,shuffle:bool=True,pre_name:str="",target_names:Tuple[str,str] = ("train","test"), size:int = math.inf):
+    target = group[0]
+    df =check_add_cv_index(df)
+    df_only_target = df.select(pl.col(["cv_index",target]))
+    df_target, df_other = divide_df_by_target(df_only_target, target)
+    df_resampled = resample_dataset(df_only_target, df_target, df_other, size)
+    if pre_name == "":
+        pre_name = f"resampled_by_{target}_"
+    index_df = stratified_kfold(df_resampled, group,k,shuffle=shuffle,pre_name=pre_name,target_names=target_names)
+    return index_df
+        
+
 def get_cv_function(cv_type:str):
     print(f"cv_type: {cv_type}")
     if cv_type == "purged":
@@ -99,12 +134,14 @@ def get_cv_function(cv_type:str):
         return stratified_kfold
     elif cv_type == "vanilla":
         return vanilla_kfold
+    elif cv_type == "resample":
+        return vanilla_resample_kfold
     else:
         raise ValueError("cv_type can only be purged, stratified or vanilla")
 
 def validate_cv_type(cv_type: Tuple[str,str]):
     for cv_subtype in cv_type:
-        if cv_subtype not in ["purged","stratified","vanilla"]:
+        if cv_subtype not in ["purged","stratified","vanilla","resample"]:
             raise ValueError("cv_type can only be purged, stratified or vanilla")
     return cv_type[0],cv_type[1]
 
@@ -148,9 +185,19 @@ def nested_cv(df:pl.DataFrame, cv_type: Tuple[str,str], group_outer:List[str],k_
                 inner_pre_name = "inner_{}_{}_replica_{}_".format(inner_type,name_group_inner,r_in)
                 target_column_name = "{}fold_{}".format(outer_pre_name,k_out)
                 dev_df = cv_df.filter(pl.col(target_column_name)=="dev")
+                test_df = cv_df.select(pl.col(["cv_index",target_column_name])).filter(pl.col(target_column_name)=="test")
                 complete_pre_name = "{}fold_{}_{}".format(outer_pre_name,k_out,inner_pre_name)
                 inner_folds = inner_cv_function(dev_df,group_inner,k_inner,shuffle=True,pre_name=complete_pre_name,target_names=("train","val"))
-                cv_df = cv_df.join(inner_folds, on="cv_index", how="left").fill_null("test")
+                col_df_list= [test_df.select(pl.col("cv_index"))]
+                for col in inner_folds.columns:
+                    if col != "cv_index":
+                        col_df = test_df.select(pl.col(target_column_name).alias(col))
+                        col_df_list.append(col_df)
+                test_rows_df =pl.concat(col_df_list,how="horizontal")
+                inner_folds = inner_folds.vstack(test_rows_df)
+        
+                
+                cv_df = cv_df.join(inner_folds, on="cv_index", how="left")
     if return_joined:
         return df.join(cv_df, on=cv_columns, how="left")
     else:

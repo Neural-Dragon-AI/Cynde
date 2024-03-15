@@ -66,7 +66,8 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
                         k_inner: int,
                         r_outer: int = 1,
                         r_inner: int = 1,
-                        skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
+                        skip_class: bool = False,
+                        target_column:str = "target") -> Tuple[pl.DataFrame, pl.DataFrame]:
     start_time = time.time()
     df = check_add_cv_index(df)
     pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
@@ -77,7 +78,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
 
     # Preprocess the dataset
     preprocess_start_time = time.time()
-    feature_arrays, labels, _ = preprocess_dataset(df, inputs)
+    feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
     #save the arrays to cynde_mount folder
     for feature_name,feature_array in feature_arrays.items():
         np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)

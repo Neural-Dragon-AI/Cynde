@@ -44,7 +44,7 @@ def fold_to_indices(fold_frame: pl.DataFrame, fold_name: str) -> Tuple[np.ndarra
     return train_indices, val_indices, test_indices
 
 
-def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str], List[List[str]]]]]):
+def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str], List[List[str]]]]],target_column:str="target"):
     feature_arrays = {}
     encoders = {}
 
@@ -59,14 +59,14 @@ def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str],
         print(f"Feature array shape for {feature_name}: {X_final.shape}")
 
     # Assuming 'target' is the label column
-    labels = df["target"].to_numpy()
+    labels = df[target_column].to_numpy()
     return feature_arrays, labels, encoders
 
 
 
-def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str],return_encoder:Optional[bool] = False,cat_encoder:Optional[OneHotEncoder]=None) -> Tuple[np.ndarray,np.ndarray]:
+def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str],return_encoder:Optional[bool] = False,cat_encoder:Optional[OneHotEncoder]=None, target_column:str="target") -> Tuple[np.ndarray,np.ndarray]:
         # print(f"Number of samples inside geat_feature: {df.shape[0]}")
-        y_final = df['target'].to_numpy()
+        y_final = df[target_column].to_numpy()
         # print(f"Number of samples for the test set inside geat_feature: {y_final.shape[0]}")
         #get train embeddings
         embeddings = []
