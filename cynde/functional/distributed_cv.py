@@ -11,7 +11,7 @@ from cynde.functional.cv import generate_folds_from_np_modal_compatible, check_a
 from cynde.functional.classify import fit_clf_from_np_modal, load_arrays_from_mount_modal
 
 cv_stub = modal.Stub("distributed_cv")
-LOCAL_MOUNT_PATH = os.getenv['MODAL_MOUNT']
+LOCAL_MOUNT_PATH = os.getenv('MODAL_MOUNT')
     
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
