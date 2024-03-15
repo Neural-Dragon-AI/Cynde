@@ -11,6 +11,9 @@ load_dotenv()
 
 
 def set_directories(root_dir):
+    if root_dir is None:
+        raise ValueError("CYNDE_DIR environment variable must be set before using cynde")
+    os.makedirs(root_dir, exist_ok=True)
     os.makedirs(os.path.join(root_dir, "cache"), exist_ok=True)
     os.makedirs(os.path.join(root_dir, "output"), exist_ok=True)
     os.makedirs(os.path.join(root_dir, "mount"), exist_ok=True)
