@@ -13,10 +13,10 @@ load_dotenv()
 def set_directories(root_dir):
     os.makedirs(os.path.join(root_dir, "cache"), exist_ok=True)
     os.makedirs(os.path.join(root_dir, "output"), exist_ok=True)
-    os.makedirs(os.path.join(root_dir, "modal_sharing"), exist_ok=True)
+    os.makedirs(os.path.join(root_dir, "mount"), exist_ok=True)
     os.environ['CACHE_DIR'] = os.path.join(root_dir, "cache")
     os.environ['OUTPUT_DIR'] = os.path.join(root_dir, "output")
-    os.environ['MODAL_SHARING_DIR'] = os.path.join(root_dir, "modal_sharing")
+    os.environ['MODAL_MOUNT'] = os.path.join(root_dir, "mount")
 
-root_dir = os.getenv('ROOT_DIR')
+root_dir = os.getenv('CYNDE_DIR')
 set_directories(root_dir)

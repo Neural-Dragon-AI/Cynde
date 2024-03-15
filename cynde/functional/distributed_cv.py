@@ -5,12 +5,14 @@ import os
 import numpy as np
 import polars as pl
 import time
+import os
 from typing import Tuple, Optional, Dict, List, Any, Union
 from cynde.functional.cv import generate_folds_from_np_modal_compatible, check_add_cv_index, preprocess_dataset, nested_cv, RESULTS_SCHEMA
 from cynde.functional.classify import fit_clf_from_np_modal, load_arrays_from_mount_modal
 
 cv_stub = modal.Stub("distributed_cv")
-LOCAL_MOUNT_PATH = r"/Users/tommasofurlanello/Documents/Dev/Cynde/cynde_mount"
+LOCAL_MOUNT_PATH = os.getenv['MODAL_MOUNT']
+    
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
