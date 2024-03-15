@@ -16,7 +16,7 @@ LOCAL_MOUNT_PATH = os.getenv('MODAL_MOUNT')
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
     
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .env({"CYNDE_DIR": "/opt/cynde"})
@@ -59,6 +59,32 @@ def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
             results_list.append(results_df_row)
     return pred_list, results_list
 
+
+def preprocess_np_modal(df: pl.DataFrame,
+                        mount_dir: str ,
+                        inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                        target_column:str = "target") -> Tuple[pl.DataFrame, pl.DataFrame]:
+    
+
+    # Preprocess the dataset
+    preprocess_start_time = time.time()
+    feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
+    #save the arrays to cynde_mount folder
+    print(f"Saving arrays to {mount_dir}")
+    for feature_name,feature_array in feature_arrays.items():
+        np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
+    np.save(os.path.join(mount_dir,"labels.npy"),labels)
+    preprocess_end_time = time.time()
+    print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
+
+def check_preprocessed_np_modal(mount_dir: str, inputs: List[Dict[str, Union[List[str], List[List[str]]]]]) -> bool:
+    for feature_dict in inputs:
+        for feature_list in feature_dict.values():
+            for feature in feature_list:
+                if not os.path.exists(os.path.join(mount_dir,feature+".npy")):
+                    raise ValueError(f"Feature {feature} not found in {mount_dir}")
+    return True
+
 def train_nested_cv_from_np_modal(df: pl.DataFrame,
                         cv_type: Tuple[str, str],
                         mount_dir: str ,
@@ -71,7 +97,8 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
                         r_outer: int = 1,
                         r_inner: int = 1,
                         skip_class: bool = False,
-                        target_column:str = "target") -> Tuple[pl.DataFrame, pl.DataFrame]:
+                        target_column:str = "target",
+                        load_preprocess:bool=True) -> Tuple[pl.DataFrame, pl.DataFrame]:
     start_time = time.time()
     df = check_add_cv_index(df)
     pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
@@ -82,12 +109,15 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
 
     # Preprocess the dataset
     preprocess_start_time = time.time()
-    feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
-    #save the arrays to cynde_mount folder
-    print(f"Saving arrays to {mount_dir}")
-    for feature_name,feature_array in feature_arrays.items():
-        np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
-    np.save(os.path.join(mount_dir,"labels.npy"),labels)
+    if load_preprocess:
+        check_preprocessed_np_modal(mount_dir,inputs)
+    else:
+        feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
+        #save the arrays to cynde_mount folder
+        print(f"Saving arrays to {mount_dir}")
+        for feature_name,feature_array in feature_arrays.items():
+            np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
+        np.save(os.path.join(mount_dir,"labels.npy"),labels)
     preprocess_end_time = time.time()
     print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
 
