@@ -162,6 +162,16 @@ def derive_cv_columns(group_outer:List[str],group_inner:List[str]):
 
 
 def nested_cv(df:pl.DataFrame, cv_type: Tuple[str,str], group_outer:List[str],k_outer:int,group_inner:List[str],k_inner:int,r_outer:int =1, r_inner:int =1,return_joined : bool = False):
+    if "precomputed" in cv_type:
+        print("detected precomputed cv")
+        df = check_add_cv_index(df)
+        if return_joined:        
+            return df
+        else:
+            folds_columns = [col for col in  df.columns if "fold" in col]
+            return df.select(pl.col(["cv_index"]+folds_columns))
+
+    
     outer_type,inner_type = validate_cv_type(cv_type)
         
     df = check_add_cv_index(df)
@@ -210,6 +220,8 @@ def get_fold_name_cv(group_outer:List[str],
                     group_inner:List[str],
                     r_inner:int,
                     k_inner:int):
+    if "precomputed" in cv_type:
+        return "fold_{}".format(k_inner+1)
     return "outer_{}_{}_replica_{}_fold_{}_inner_{}_{}_replica_{}_fold_{}".format(cv_type[0],
                                                                                   "_".join(group_outer),   
                                                                                    r_outer,
@@ -482,34 +494,34 @@ def generate_folds_from_np(cv_df: pl.DataFrame, cv_type: Tuple[str, str], featur
 
                         yield fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
 
-def generate_folds_from_np_modal_compatible(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
-                           labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
-                           r_outer: int, r_inner: int) -> Generator:
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
-                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
+# def generate_folds_from_np_modal_compatible(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
+#                            labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
+#                            r_outer: int, r_inner: int) -> Generator:
+#     for r_o in range(r_outer):
+#         for k_o in range(k_outer):
+#             for r_i in range(r_inner):
+#                 for k_i in range(k_inner):
+#                     fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
+#                     indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
 
-                    for feature_name, X in feature_arrays.items():
-                        y = labels
-                        x_tr, y_tr = X[indices_train,:], y[indices_train]
-                        x_val, y_val = X[indices_val,:], y[indices_val]
-                        x_te, y_te = X[indices_test,:], y[indices_test]
+#                     for feature_name, X in feature_arrays.items():
+#                         y = labels
+#                         x_tr, y_tr = X[indices_train,:], y[indices_train]
+#                         x_val, y_val = X[indices_val,:], y[indices_val]
+#                         x_te, y_te = X[indices_test,:], y[indices_test]
 
-                        fold_meta = {
-                            "r_outer": r_o,
-                            "k_outer": k_o,
-                            "r_inner": r_i,
-                            "k_inner": k_i,
-                            "fold_name": fold_name,
-                            "train_index": pl.Series(indices_train),
-                            "val_index": pl.Series(indices_val),
-                            "test_index": pl.Series(indices_test),
-                        }
+#                         fold_meta = {
+#                             "r_outer": r_o,
+#                             "k_outer": k_o,
+#                             "r_inner": r_i,
+#                             "k_inner": k_i,
+#                             "fold_name": fold_name,
+#                             "train_index": pl.Series(indices_train),
+#                             "val_index": pl.Series(indices_val),
+#                             "test_index": pl.Series(indices_test),
+#                         }
 
-                        yield (x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta, feature_name)
+#                         yield (x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta, feature_name)
 
 
 def fit_models_from_np(models: Dict[str, List[Dict[str, Any]]], feature_name: str,

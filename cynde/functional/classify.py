@@ -385,6 +385,8 @@ def load_arrays_from_mount_modal(feature_name:str):
         X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
         y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
         return X,y
+
+
 def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
         classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
 
@@ -420,7 +422,12 @@ def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_me
     start_pred_time = time.time()
     # print("before clf predict")
     y_pred_train = clf.predict(X_train)
-    y_pred_val = clf.predict(X_val)
+    print("prediction type: ", type(y_pred_train))
+    #check val length before prediction, it could be empty
+    if len(X_val)>0:
+        y_pred_val = clf.predict(X_val)
+    else:
+        y_pred_val = []
     y_pred_test = clf.predict(X_test)
     end_pred_time = time.time()
     human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))

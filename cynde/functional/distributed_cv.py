@@ -59,6 +59,42 @@ def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
             results_list.append(results_df_row)
     return pred_list, results_list
 
+def load_arrays_from_mount_local(feature_name:str,mount_directory:str):
+        X = np.load(os.path.join(mount_directory,feature_name+".npy"))
+        y = np.load(os.path.join(mount_directory,"labels.npy"))
+        return X,y
+    
+
+def fit_models_local(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
+               fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
+
+    
+    pred_list = []
+    results_list = []
+    X,y = load_arrays_from_mount_local(feature_name = feature_name,mount_directory=mount_directory)
+    x_tr, y_tr = X[indices_train,:], y[indices_train]
+    x_val, y_val = X[indices_val,:], y[indices_val]
+    x_te, y_te = X[indices_test,:], y[indices_test]
+
+    for model, hp_list in models.items():
+        for hp in hp_list:
+            pred_df_col, results_df_row = fit_clf_from_np_modal(x_tr, y_tr, x_val, y_val, x_te, y_te,
+                                                                fold_metadata=fold_meta,
+                                                  classifier=model,
+                                                  classifier_hp=hp,
+                                                  input_features_name=feature_name)
+            pred_list.append(pred_df_col)
+            
+            fold_meta_data_df = pl.DataFrame({
+                "k_outer": [fold_meta["k_outer"]],
+                "k_inner": [fold_meta["k_inner"]],
+                "r_outer": [fold_meta["r_outer"]],
+                "r_inner": [fold_meta["r_inner"]]
+            })
+            
+            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
+            results_list.append(results_df_row)
+    return pred_list, results_list
 
 def preprocess_np_modal(df: pl.DataFrame,
                         mount_dir: str ,
@@ -96,7 +132,7 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
                         k_inner: int,
                         r_outer: int = 1,
                         r_inner: int = 1,
-                        skip_class: bool = False,
+                        run_local: bool = False,
                         target_column:str = "target",
                         load_preprocess:bool=True) -> Tuple[pl.DataFrame, pl.DataFrame]:
     start_time = time.time()
@@ -129,8 +165,13 @@ def train_nested_cv_from_np_modal(df: pl.DataFrame,
     # Generate folds and fit models
     folds_generation_start_time = time.time()
     fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_names, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
-    if not skip_class:
+    if not run_local:
         all_tuples_list = fit_models_modal.starmap(fit_tasks)
+    else:
+        all_tuples_list = []
+        for task in fit_tasks:
+            all_tuples_list.append(fit_models_local(*task))
+
     #all_tuples_list is a list of tuples(list(pred_df),list(results_df)) we want to get to a single list
     for (pred_list,res_list) in all_tuples_list:
         all_results_list.extend(res_list)
