@@ -14,7 +14,9 @@ from cynde.async_tools.api_request_parallel_processor import process_api_request
 MAX_INPUT = {
     "text-embedding-3-small": 8191,
     "text-embedding-3-large": 8191,
-    "text-embedding-ada-002": 8191
+    "text-embedding-ada-002": 8191,
+    "togethercomputer/m2-bert-80M-32k-retrieval": 32_000,
+    "voyage-code-2":16_000
 }
 
 
@@ -192,8 +194,8 @@ def check_max_token_len(df:pl.DataFrame, column_name:str, max_len:int=8192):
 
     return df.select(pl.col('token_len').max().alias('max_token_len'))[0, 'max_token_len']
 
-def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, results_filepath: str, api_key: str, model_name="text-embedding-3-small", batch_size:int=100) -> pl.DataFrame:
-    request_url = "https://api.openai.com/v1/embeddings"
+def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, results_filepath: str, api_key: str, model_name="text-embedding-3-small", request_url = "https://api.openai.com/v1/embeddings", batch_size:int=5) -> pl.DataFrame:
+
     if check_max_token_len(df, column_name) > MAX_INPUT[model_name]:
         raise ValueError(f"Elements in the column exceed the max token length of {model_name}. Max token length is {MAX_INPUT[model_name]}, please remove or truncated the elements that exceed the max len in the column.")
     if model_name not in MAX_INPUT:
@@ -210,8 +212,8 @@ def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, res
             save_filepath=results_filepath,
             request_url=request_url,
             api_key=api_key,
-            max_requests_per_minute=float(10_000),
-            max_tokens_per_minute=float(10_000_000),
+            max_requests_per_minute=float(100),#10_000
+            max_tokens_per_minute=float(1_000_000),#10_000_000
             token_encoding_name="cl100k_base",
             max_attempts=int(5),
             logging_level=int(20),
@@ -236,6 +238,7 @@ def embed_columns(
     column_names: List[Union[str, List[str]]], 
     models: Union[str, List[str]] = "text-embedding-3-small",
     cache_dir: str = os.path.join(os.path.dirname(os.getcwd()), "cache"),
+    request_url = "https://api.openai.com/v1/embeddings",
     api_key: str = "<your_api_key_here>", # Assume API key is passed as a parameter or set elsewhere
 ) -> pl.DataFrame:
     """
@@ -251,13 +254,13 @@ def embed_columns(
         for model_name in models:
             
             # Generate file paths for requests and results
-            
-            requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_requests.jsonl")
-            results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_results.jsonl")
+            save_model_name = model_name.replace("/", "")
+            requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{save_model_name}_requests.jsonl")
+            results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{save_model_name}_results.jsonl")
             if os.path.exists(requests_filepath) or os.path.exists(results_filepath):
                 time_code = time.strftime("%Y-%m-%d_%H-%M-%S")
-                requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_{time_code}_requests.jsonl")
-                results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_{time_code}_results.jsonl")
+                requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{save_model_name}_{time_code}_requests.jsonl")
+                results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{save_model_name}_{time_code}_results.jsonl")
                 
             
             # Generate embeddings and merge them into the DataFrame
@@ -267,6 +270,7 @@ def embed_columns(
                 requests_filepath=requests_filepath, 
                 results_filepath=results_filepath, 
                 api_key=api_key, 
+                request_url=request_url,
                 model_name=model_name
             )
             
