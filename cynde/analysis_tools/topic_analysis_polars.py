@@ -1,28 +1,3 @@
-'''
-This code is adapted From BERTopic
-https://github.com/MaartenGr/BERTopic/blob/master/LICENSE
-MIT License
-
-Copyright (c) 2023, Maarten P. Grootendorst
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-'''
 from typing import List, Tuple, Union, Mapping, Any, Callable, Iterable
 import logging
 import hdbscan
@@ -113,7 +88,7 @@ class MyLogger:
 
 logger = MyLogger("WARNING")
 
-class TopicAnalysis:
+class TopicAnalysisPolars:
     def __init__(self,
                  language='english',
                  top_n_words: int = 10,
@@ -229,39 +204,41 @@ class TopicAnalysis:
         """
         check_is_fitted(self)
 
-        info = pd.DataFrame(self.topic_sizes_.items(), columns=["Topic", "Count"]).sort_values("Topic")
-        info["Name"] = info.Topic.map(self.topic_labels_)
+        info = pl.DataFrame(list(self.topic_sizes_.items()), schema=["Topic", "Count"]).sort("Topic")
+        info = info.with_columns(pl.col("Topic").map_dict(self.topic_labels_).alias("Name"))
 
         # Custom label
         if self.custom_labels_ is not None:
-            if len(self.custom_labels_) == len(info):
-                labels = {topic - self._outliers: label for topic, label in enumerate(self.custom_labels_)}
-                info["CustomName"] = info["Topic"].map(labels)
+            if len(self.custom_labels_) == info.height:
+                labels = pl.Series([label for label in self.custom_labels_]).apply(lambda x, y: x - y, y=self._outliers)
+                info = info.with_columns(pl.col("Topic").map(labels).alias("CustomName"))
 
         # Main Keywords
         values = {topic: list(list(zip(*values))[0]) for topic, values in self.topic_representations_.items()}
-        info["Representation"] = info["Topic"].map(values)
+        info = info.with_columns(pl.col("Topic").map_dict(values).alias("Representation"))
 
         # Extract all topic aspects
+        '''
         if self.topic_aspects_:
             for aspect, values in self.topic_aspects_.items():
                 if isinstance(list(values.values())[-1], list):
                     if isinstance(list(values.values())[-1][0], tuple) or isinstance(list(values.values())[-1][0], list):
-                        values = {topic: list(list(zip(*value))[0]) for topic, value in values.items()}
+                        values = pl.Series([list(list(zip(*value))[0]) for topic, value in values.items()])
                     elif isinstance(list(values.values())[-1][0], str):
-                        values = {topic: " ".join(value).strip() for topic, value in values.items()}
-                info[aspect] = info["Topic"].map(values)
+                        values = pl.Series([(" ".join(value).strip()) for topic, value in values.items()])
+                info = info.with_columns(pl.col("Topic").map(values).alias(aspect))
+        '''
 
-        # Representative Docs / Images
+        # Representative Docs 
         if self.representative_docs_ is not None:
-            info["Representative_Docs"] = info["Topic"].map(self.representative_docs_)
+            info = info.with_columns(pl.col("Topic").map_dict(self.representative_docs_).alias("Representative_Docs"))
 
         # Select specific topic to return
         if topic is not None:
-            info = info.loc[info.Topic == topic, :]
+            info = info.filter(pl.col("Topic") == topic)
 
-        return info.reset_index(drop=True)
-
+        return info.with_row_count(name="index").drop("index")
+    
     def fit_transform(self,
                       documents: List[str],
                       embeddings: np.ndarray = None,
@@ -292,12 +269,12 @@ class TopicAnalysis:
             check_embeddings_shape(embeddings, documents)
 
         doc_ids = range(len(documents)) if documents is not None else range(len(images))
-        documents = pd.DataFrame({"Document": documents,
+        documents = pl.DataFrame({"Document": documents,
                                   "ID": doc_ids,
                                   "Topic": None,})
 
 
-        # Reduce dimensionality
+        # Dubiously Reduce dimensionality
         umap_embeddings = self._reduce_dimensionality(embeddings, y)
 
         # Cluster reduced embeddings
@@ -320,7 +297,7 @@ class TopicAnalysis:
 
         # Resulting output
         self.probabilities_ = self._map_probabilities(probabilities, original_topics=True)
-        predictions = documents.Topic.to_list()
+        predictions = documents['Topic'].to_list()
 
 
         return predictions, self.probabilities_
@@ -381,9 +358,9 @@ class TopicAnalysis:
     
     def _cluster_embeddings(self,
                             umap_embeddings: np.ndarray,
-                            documents: pd.DataFrame,
+                            documents: pl.DataFrame,
                             partial_fit: bool = False,
-                            y: np.ndarray = None) -> Tuple[pd.DataFrame,
+                            y: np.ndarray = None) -> Tuple[pl.DataFrame,
                                                            np.ndarray]:
         """ Cluster UMAP embeddings with HDBSCAN
 
@@ -401,7 +378,7 @@ class TopicAnalysis:
         if partial_fit:
             self.hdbscan_model = self.hdbscan_model.partial_fit(umap_embeddings)
             labels = self.hdbscan_model.labels_
-            documents['Topic'] = labels
+            documents = documents.with_columns(pl.Series(name="Topic", values=labels))
             self.topics_ = labels
         else:
             try:
@@ -413,7 +390,7 @@ class TopicAnalysis:
                 labels = self.hdbscan_model.labels_
             except AttributeError:
                 labels = y
-            documents['Topic'] = labels
+            documents = documents.with_columns(pl.Series(name="Topic", values=labels))
             self._update_topic_size(documents)
 
         # Some algorithms have outlier labels (-1) that can be tricky to work
@@ -440,8 +417,8 @@ class TopicAnalysis:
         Arguments:
             documents: Updated dataframe with documents and their corresponding IDs and newly added Topics
         """
-        self.topic_sizes_ = collections.Counter(documents.Topic.values.tolist())
-        self.topics_ = documents.Topic.astype(int).tolist()
+        self.topic_sizes_ = collections.Counter(dict(documents['Topic'].value_counts().iter_rows()))
+        self.topics_ = documents["Topic"].to_list()
 
     def _extract_embeddings(self,
                             documents: Union[List[str], str],
@@ -477,7 +454,7 @@ class TopicAnalysis:
                              "Either choose 'word' or 'document' as the method. ")
         return embeddings
 
-    def _create_topic_vectors(self, documents: pd.DataFrame = None, embeddings: np.ndarray = None, mappings=None):
+    def _create_topic_vectors(self, documents: pl.DataFrame = None, embeddings: np.ndarray = None, mappings=None):
         """ Creates embeddings per topics based on their topic representation
 
         As a default, topic vectors (topic embeddings) are created by taking
@@ -494,9 +471,9 @@ class TopicAnalysis:
         # Topic embeddings based on input embeddings
         if embeddings is not None and documents is not None:
             topic_embeddings = []
-            topics = documents.sort_values("Topic").Topic.unique()
+            topics = documents.sort("Topic")['Topic'].unique()
             for topic in topics:
-                indices = documents.loc[documents.Topic == topic, "ID"].values
+                indices = documents.filter(pl.col("Topic") == topic)["ID"].to_numpy()
                 indices = [int(index) for index in indices]
                 topic_embedding = np.mean(embeddings[indices], axis=0)
                 topic_embeddings.append(topic_embedding)
@@ -520,7 +497,7 @@ class TopicAnalysis:
                 topic_embeddings[topics_to_map[topic]] = embds
             unique_topics = sorted(list(topic_embeddings.keys()))
             self.topic_embeddings_ = np.array([topic_embeddings[topic] for topic in unique_topics])
-
+        '''
         # Topic embeddings based on keyword representations
         elif self.embedding_model is not None and type(self.embedding_model) is not BaseEmbedder:
             topic_list = list(self.topic_representations_.keys())
@@ -539,6 +516,7 @@ class TopicAnalysis:
                 method="word",
                 verbose=False
             )
+            
 
             # Take the weighted average of word embeddings in a topic based on their c-TF-IDF value
             # The embeddings var is a single numpy matrix and therefore slicing is necessary to
@@ -552,8 +530,9 @@ class TopicAnalysis:
                 topic_embeddings.append(topic_embedding)
 
             self.topic_embeddings_ = np.array(topic_embeddings)
+        '''
 
-    def _extract_topics(self, documents: pd.DataFrame, embeddings: np.ndarray = None, mappings=None, verbose: bool = False):
+    def _extract_topics(self, documents: pl.DataFrame, embeddings: np.ndarray = None, mappings=None, verbose: bool = False):
         """ Extract topics from the clusters using a class-based TF-IDF
 
         Arguments:
@@ -567,7 +546,7 @@ class TopicAnalysis:
         """
         if verbose:
             logger.info("Representation - Extracting topics from clusters using representation models.")
-        documents_per_topic = documents.groupby(['Topic'], as_index=False).agg({'Document': ' '.join})
+        documents_per_topic = documents.group_by(['Topic']).agg(pl.col('Document').str.concat(" "))
         self.c_tf_idf_, words = self._c_tf_idf(documents_per_topic)
         self.topic_representations_ = self._extract_words_per_topic(words, documents)
         self._create_topic_vectors(documents=documents, embeddings=embeddings, mappings=mappings)
@@ -579,7 +558,7 @@ class TopicAnalysis:
     
     def _extract_words_per_topic(self,
                                  words: List[str],
-                                 documents: pd.DataFrame,
+                                 documents: pl.DataFrame,
                                  c_tf_idf: csr_matrix = None,
                                  calculate_aspects: bool = True) -> Mapping[str,
                                                                             List[Tuple[str, float]]]:
@@ -601,7 +580,7 @@ class TopicAnalysis:
         if c_tf_idf is None:
             c_tf_idf = self.c_tf_idf_
 
-        labels = sorted(list(documents.Topic.unique()))
+        labels = sorted(list(documents['Topic'].unique()))
         labels = [int(label) for label in labels]
 
         # Get at least the top 30 indices and values per row in a sparse c-TF-IDF matrix
@@ -647,7 +626,7 @@ class TopicAnalysis:
 
     def _extract_representative_docs(self,
                                      c_tf_idf: csr_matrix,
-                                     documents: pd.DataFrame,
+                                     documents: pl.DataFrame,
                                      topics: Mapping[str, List[Tuple[str, float]]],
                                      nr_samples: int = 500,
                                      nr_repr_docs: int = 5,
@@ -676,11 +655,25 @@ class TopicAnalysis:
                           that belong to each topic
         """
         # Sample documents per topic
-        documents_per_topic = (
-            documents.groupby('Topic')
-                     .sample(n=nr_samples, replace=True, random_state=42)
-                     .drop_duplicates()
+        documents = documents.with_row_index("row_idx")
+        documents_per_topic_ = (
+                    documents
+                     .groupby('Topic')
+                     .agg(
+                         [pl.col("row_idx").sample(fraction=0.6, with_replacement=False, seed=1)]
+                     )
+                     .explode("row_idx")
         )
+        documents_per_topic = (
+            pl.concat(
+                [documents_per_topic_, 
+                 documents
+                 .select(pl.all().exclude(["Topic", "row_idx"])
+                 .take(documents_per_topic_["row_idx"]))], how="horizontal")
+            
+            )
+        
+        
 
         # Find and extract documents that are most similar to the topic
         repr_docs = []
@@ -690,10 +683,10 @@ class TopicAnalysis:
         labels = sorted(list(topics.keys()))
         for index, topic in enumerate(labels):
 
-            # Slice data
-            selection = documents_per_topic.loc[documents_per_topic.Topic == topic, :]
-            selected_docs = selection["Document"].values
-            selected_docs_ids = selection.index.tolist()
+            # Slice data using polars
+            selection = documents_per_topic.filter(pl.col("Topic") == topic)
+            selected_docs = selection["Document"].to_list()
+            selected_docs_ids = selection['row_idx'].to_list()
 
             # Calculate similarity
             nr_docs = nr_repr_docs if len(selected_docs) > nr_repr_docs else len(selected_docs)
@@ -735,7 +728,7 @@ class TopicAnalysis:
             tf_idf: The resulting matrix giving a value (importance score) for each word per topic
             words: The names of the words to which values were given
         """
-        documents = self._preprocess_text(documents_per_topic.Document.values)
+        documents = self._preprocess_text(documents_per_topic['Document'].to_numpy())
 
         if partial_fit:
             X = self.vectorizer_model.partial_fit(documents).update_bow(documents)
@@ -783,9 +776,6 @@ class TopicAnalysis:
             cleaned_documents = [re.sub(r'[^A-Za-z0-9 ]+', '', doc) for doc in cleaned_documents]
         cleaned_documents = [doc if doc != "" else "emptydoc" for doc in cleaned_documents]
         return cleaned_documents
-    
-    def label_clusters(self):
-        pass
 
     def hierarchical_topics(self,
                             docs: List[str],
@@ -934,7 +924,7 @@ class TopicAnalysis:
         return hier_topics
     
     @staticmethod
-    def get_topic_tree(hier_topics: pd.DataFrame,
+    def get_topic_tree(hier_topics: pl.DataFrame,
                        max_distance: float = None,
                        tight_layout: bool = False) -> str:
         """ Extract the topic tree such that it can be printed
