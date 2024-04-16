@@ -26,6 +26,7 @@ from sklearn.base import BaseEstimator
 from typing import Mapping, List, Tuple
 from scipy.spatial.distance import squareform
 
+
 class BaseRepresentation(BaseEstimator):
     """ The base representation model for fine-tuning topic representations """
     def extract_topics(self,
@@ -548,6 +549,7 @@ class TopicAnalysisPolars:
             logger.info("Representation - Extracting topics from clusters using representation models.")
         documents_per_topic = documents.group_by(['Topic']).agg(pl.col('Document').str.concat(" "))
         self.c_tf_idf_, words = self._c_tf_idf(documents_per_topic)
+        #self.ctfidf_model, self.c_tf_idf_, words = tfidf_embed(documents_per_topic, fit=True, partial_fit=False)
         self.topic_representations_ = self._extract_words_per_topic(words, documents)
         self._create_topic_vectors(documents=documents, embeddings=embeddings, mappings=mappings)
         self.topic_labels_ = {key: f"{key}_" + "_".join([word[0] for word in values[:4]])
@@ -585,8 +587,8 @@ class TopicAnalysisPolars:
 
         # Get at least the top 30 indices and values per row in a sparse c-TF-IDF matrix
         top_n_words = max(self.top_n_words, 30)
-        indices = self._top_n_idx_sparse(c_tf_idf, top_n_words)
-        scores = self._top_n_values_sparse(c_tf_idf, indices)
+        indices = _top_n_idx_sparse(c_tf_idf, top_n_words)
+        scores = _top_n_values_sparse(c_tf_idf, indices)
         sorted_indices = np.argsort(scores, 1)
         indices = np.take_along_axis(indices, sorted_indices, axis=1)
         scores = np.take_along_axis(scores, sorted_indices, axis=1)
@@ -599,17 +601,8 @@ class TopicAnalysisPolars:
                           ]
                   for index, label in enumerate(labels)}
 
-        # Fine-tune the topic representations
-        if isinstance(self.representation_model, list):
-            for tuner in self.representation_model:
-                topics = tuner.extract_topics(self, documents, c_tf_idf, topics)
-        elif isinstance(self.representation_model, BaseRepresentation):
-            topics = self.representation_model.extract_topics(self, documents, c_tf_idf, topics)
-        elif isinstance(self.representation_model, dict):
-            if self.representation_model.get("Main"):
-                topics = self.representation_model["Main"].extract_topics(self, documents, c_tf_idf, topics)
         topics = {label: values[:self.top_n_words] for label, values in topics.items()}
-
+        '''
         # Extract additional topic aspects
         if calculate_aspects and isinstance(self.representation_model, dict):
             for aspect, aspect_model in self.representation_model.items():
@@ -621,7 +614,7 @@ class TopicAnalysisPolars:
                         self.topic_aspects_[aspect] = aspects
                     elif isinstance(aspect_model, BaseRepresentation):
                         self.topic_aspects_[aspect] = aspect_model.extract_topics(self, documents, c_tf_idf, aspects)
-
+        '''
         return topics
 
     def _extract_representative_docs(self,
@@ -712,7 +705,7 @@ class TopicAnalysisPolars:
         return repr_docs_mappings, repr_docs, repr_docs_indices, repr_docs_ids
 
     def _c_tf_idf(self,
-                  documents_per_topic: pd.DataFrame,
+                  documents_per_topic: pl.DataFrame,
                   fit: bool = True,
                   partial_fit: bool = False) -> Tuple[csr_matrix, List[str]]:
         """ Calculate a class-based TF-IDF where m is the number of total documents.
@@ -737,15 +730,15 @@ class TopicAnalysisPolars:
             X = self.vectorizer_model.transform(documents)
         else:
             X = self.vectorizer_model.transform(documents)
-
         # Scikit-Learn Deprecation: get_feature_names is deprecated in 1.0
         # and will be removed in 1.2. Please use get_feature_names_out instead.
         if version.parse(sklearn_version) >= version.parse("1.0.0"):
             words = self.vectorizer_model.get_feature_names_out()
         else:
             words = self.vectorizer_model.get_feature_names()
-
+        
         multiplier = None
+        '''
         if self.ctfidf_model.seed_words and self.seed_topic_list:
             seed_topic_list = [seed for seeds in self.seed_topic_list for seed in seeds]
             multiplier = np.array([self.ctfidf_model.seed_multiplier if word in self.ctfidf_model.seed_words else 1 for word in words])
@@ -755,12 +748,11 @@ class TopicAnalysisPolars:
         elif self.seed_topic_list:
             seed_topic_list = [seed for seeds in self.seed_topic_list for seed in seeds]
             multiplier = np.array([1.2 if word in seed_topic_list else 1 for word in words])
-
+        '''
         if fit:
             self.ctfidf_model = self.ctfidf_model.fit(X, multiplier=multiplier)
 
         c_tf_idf = self.ctfidf_model.transform(X)
-
         return c_tf_idf, words
     
     def _preprocess_text(self, documents: np.ndarray) -> List[str]:
@@ -1025,44 +1017,7 @@ class TopicAnalysisPolars:
         start = str(hier_topics.Parent_ID.astype(int).max())
         return get_tree(start, tree)
 
-    @staticmethod
-    def _top_n_idx_sparse(matrix: csr_matrix, n: int) -> np.ndarray:
-        """ Return indices of top n values in each row of a sparse matrix
-
-        Retrieved from:
-            https://stackoverflow.com/questions/49207275/finding-the-top-n-values-in-a-row-of-a-scipy-sparse-matrix
-
-        Arguments:
-            matrix: The sparse matrix from which to get the top n indices per row
-            n: The number of highest values to extract from each row
-
-        Returns:
-            indices: The top n indices per row
-        """
-        indices = []
-        for le, ri in zip(matrix.indptr[:-1], matrix.indptr[1:]):
-            n_row_pick = min(n, ri - le)
-            values = matrix.indices[le + np.argpartition(matrix.data[le:ri], -n_row_pick)[-n_row_pick:]]
-            values = [values[index] if len(values) >= index + 1 else None for index in range(n)]
-            indices.append(values)
-        return np.array(indices)
-
-    @staticmethod
-    def _top_n_values_sparse(matrix: csr_matrix, indices: np.ndarray) -> np.ndarray:
-        """ Return the top n values for each row in a sparse matrix
-
-        Arguments:
-            matrix: The sparse matrix from which to get the top n indices per row
-            indices: The top n indices per row
-
-        Returns:
-            top_values: The top n scores per row
-        """
-        top_values = []
-        for row, values in enumerate(indices):
-            scores = np.array([matrix[row, value] if value is not None else 0 for value in values])
-            top_values.append(scores)
-        return np.array(top_values)
+    
     
     def _map_probabilities(self,
                            probabilities: Union[np.ndarray, None],
@@ -1391,3 +1346,43 @@ def validate_distance_matrix(X, n_samples):
         raise ValueError("Distance matrix cannot contain negative values.")
 
     return X
+
+
+@staticmethod
+def _top_n_idx_sparse(matrix: csr_matrix, n: int) -> np.ndarray:
+    """ Return indices of top n values in each row of a sparse matrix
+
+    Retrieved from:
+        https://stackoverflow.com/questions/49207275/finding-the-top-n-values-in-a-row-of-a-scipy-sparse-matrix
+
+    Arguments:
+        matrix: The sparse matrix from which to get the top n indices per row
+        n: The number of highest values to extract from each row
+
+    Returns:
+        indices: The top n indices per row
+    """
+    indices = []
+    for le, ri in zip(matrix.indptr[:-1], matrix.indptr[1:]):
+        n_row_pick = min(n, ri - le)
+        values = matrix.indices[le + np.argpartition(matrix.data[le:ri], -n_row_pick)[-n_row_pick:]]
+        values = [values[index] if len(values) >= index + 1 else None for index in range(n)]
+        indices.append(values)
+    return np.array(indices)
+
+@staticmethod
+def _top_n_values_sparse(matrix: csr_matrix, indices: np.ndarray) -> np.ndarray:
+    """ Return the top n values for each row in a sparse matrix
+
+    Arguments:
+        matrix: The sparse matrix from which to get the top n indices per row
+        indices: The top n indices per row
+
+    Returns:
+        top_values: The top n scores per row
+    """
+    top_values = []
+    for row, values in enumerate(indices):
+        scores = np.array([matrix[row, value] if value is not None else 0 for value in values])
+        top_values.append(scores)
+    return np.array(top_values)
