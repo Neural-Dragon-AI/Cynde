@@ -5,6 +5,7 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from scipy.sparse import csr_matrix
 from cynde.analysis_tools.ctfidf import ClassTfidfTransformer
 import re
+from time import perf_counter
 
 def preprocessing(documents: np.ndarray, language: str = "english") -> List[str]:
     """
@@ -123,15 +124,34 @@ def extract_words_per_topic(words:List[str],documents_frame: pl.DataFrame, c_tf_
     Returns:
         pl.DataFrame: The updated DataFrame with two new columns: 'tfidf_words' and 'word_scores', containing the top n words and their scores per topic, respectively.
     """
+
+    t0 = perf_counter()
     top_n_words = max(top_n_words, 30)
     labels = sorted(list(documents_frame[index_column].unique()))
     labels = [int(label) for label in labels]
+    t1 = perf_counter()
+    print(f"labels sorted and converted to int took {t1-t0:0.4f} seconds")
+    t0 = perf_counter()
     indices = _top_n_idx_sparse(c_tf_idf, top_n_words)
+    t1 = perf_counter()
+    print(f"_top_n_idx_sparse: indices extracted took {t1-t0:0.4f} seconds")
+    t0 = perf_counter()
     scores = _top_n_values_sparse(c_tf_idf, indices)
+    t1 = perf_counter()
+    print(f"_top_n_values_sparse: scores extracted took {t1-t0:0.4f} seconds")
+    t0 = perf_counter()
     sorted_indices = np.argsort(scores, 1)
+    t1 = perf_counter()
+    print(f"np.argsort: sorted indices took {t1-t0:0.4f} seconds")
+    t0 = perf_counter()
     indices = np.take_along_axis(indices, sorted_indices, axis=1)
+    t1 = perf_counter()
+    print(f"np.take_along_axis: indices and scores sorted took {t1-t0:0.4f} seconds")
     scores = np.take_along_axis(scores, sorted_indices, axis=1)
+    t1 = perf_counter()
+    print(f"np.take_along_axis: indices and scores sorted took {t1-t0:0.4f} seconds")
 
+    t0 = perf_counter()
     topics = {label: [(words[word_index], score)
                           if word_index is not None and score > 0
                           else ("", 0.00001)
@@ -139,12 +159,16 @@ def extract_words_per_topic(words:List[str],documents_frame: pl.DataFrame, c_tf_
                           ]
                   for index, label in enumerate(labels)}
     topics = {label: values[:top_n_words] for label, values in topics.items()}
+    t1 = perf_counter()
+    print(f"topics extracted took {t1-t0:0.4f} seconds")
 
-
+    t0 = perf_counter()
     topics_list = {i:[word_tuple[0] for word_tuple in topic] for i, topic in topics.items()}
     score_list = {i:[word_tuple[1] for word_tuple in topic] for i, topic in topics.items()}
     documents_frame = documents_frame.with_columns(pl.col(index_column).replace(topics_list).alias("tfidf_words"))
     documents_frame = documents_frame.with_columns(pl.col(index_column).replace(score_list).alias("word_scores"))
+    t1 = perf_counter()
+    print(f"documents_frame updated took {t1-t0:0.4f} seconds")
     return documents_frame
     
 

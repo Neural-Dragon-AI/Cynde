@@ -6,6 +6,7 @@ from .classify import *
 from .generate import *
 from .results import *
 
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,4 +24,5 @@ def set_directories(root_dir):
     os.environ['MODAL_MOUNT'] = os.path.join(root_dir, "cynde_mount")
 
 root_dir = os.getenv('CYNDE_DIR')
+print(root_dir)
 set_directories(root_dir)
