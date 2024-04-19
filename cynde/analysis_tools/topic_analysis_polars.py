@@ -25,6 +25,7 @@ from scipy.sparse import csr_matrix
 from sklearn.base import BaseEstimator
 from typing import Mapping, List, Tuple
 from scipy.spatial.distance import squareform
+from time import perf_counter
 
 
 class BaseRepresentation(BaseEstimator):
@@ -470,16 +471,18 @@ class TopicAnalysisPolars:
         score. This will put more emphasis to words that represent a topic best.
         """
         # Topic embeddings based on input embeddings
-        if embeddings is not None and documents is not None:
-            topic_embeddings = []
-            topics = documents.sort("Topic")['Topic'].unique()
-            for topic in topics:
-                indices = documents.filter(pl.col("Topic") == topic)["ID"].to_numpy()
-                indices = [int(index) for index in indices]
-                topic_embedding = np.mean(embeddings[indices], axis=0)
-                topic_embeddings.append(topic_embedding)
-            self.topic_embeddings_ = np.array(topic_embeddings)
 
+        
+
+        if embeddings is not None and documents is not None:
+            df = documents.with_columns(pl.Series(name="embeddings", values=embeddings))
+            aggr = df.group_by("Topic").agg([pl.col("embeddings").list.get(i).alias(f"feature_{i}").mean() for i in range(embeddings.shape[1])])
+
+            df = aggr.select(pl.col("Topic"),pl.concat_list([col for col in aggr.columns if "feature" in col]).alias("representive_cluster_vector"))
+            topics = df.sort("Topic")
+            self.topic_embeddings_ = np.array(topics['representive_cluster_vector'].to_list())
+
+        
         # Topic embeddings when merging topics
         elif self.topic_embeddings_ is not None and mappings is not None:
             topic_embeddings_dict = {}
