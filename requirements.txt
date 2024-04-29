@@ -9,3 +9,4 @@ ipykernel
 nest_asyncio
 scikit-learn
 python-dotenv
+modal
