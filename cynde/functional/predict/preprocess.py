@@ -1,6 +1,8 @@
 import polars as pl
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple
+from cynde.functional.predict.types import InputConfig,FeatureSet
+import os
 
 def convert_utf8_to_enum(df: pl.DataFrame, threshold: float = 0.2) -> pl.DataFrame:
     if not 0 < threshold < 1:
@@ -33,3 +35,25 @@ def check_add_cv_index(df:pl.DataFrame,strict:bool=False) -> Optional[pl.DataFra
     elif "cv_index" not in df.columns and strict:
         raise ValueError("cv_index column not found in the DataFrame.")
     return df
+
+def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
+    """ Saves .parquet for each feature set in input_config """
+    save_folder = input_config.save_folder
+    for feature_set in input_config.feature_sets:
+        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),[column_name for column_name in feature_set.column_names()])
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(save_folder, f"{save_name}.parquet")
+        feature_set_df.write_parquet(save_path)
+
+def load_preprocessed_features(feature_fold_path:str) -> Tuple[pl.DataFrame,pl.DataFrame,pl.DataFrame]:
+    """ Loads the the train,val and test df for a specific feature set fold """
+    pass
+
+def validate_preprocessed_inputs(input_config:InputConfig) -> None:
+    """ Validates the preprocessed input config checking if the .parquet files are present """
+    path = input_config.save_folder
+    for feature_set in input_config.feature_sets:
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(path, f"{save_name}.parquet")
+        if not os.path.exists(save_path):
+            raise ValueError(f"Preprocessed feature set '{save_name}' not found at '{save_path}'.")

@@ -1,6 +1,7 @@
 from enum import Enum
 import polars as pl
-from pydantic import BaseModel, ValidationInfo, model_validator,Field
+from pydantic import BaseModel, ValidationInfo, model_validator,Field,ValidationInfo, field_validator
+
 from enum import Enum
 from typing import Optional, Union, Dict, Literal, Any, List, Tuple, Type, TypeVar, Generator
 
@@ -23,18 +24,17 @@ class Feature(BaseModel):
     name: str
     description: Optional[str] = None
 
-    @model_validator(mode='before')
-    def validate_column_name(cls, values):
-        column_name = values.get("column_name")
-        context = values.get("context")
-        if context is not None and isinstance(context, pl.DataFrame):
-            if column_name not in context.columns:
+    @field_validator("column_name")
+    @classmethod
+    def column_in_df(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if column_name not in df.columns:
                 raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-        return values
+        return v
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = "allow"
 
 class NumericalFeature(Feature):
     scaler_type: ScalerType = Field(ScalerType.STANDARD_SCALER, description="The type of scaler to apply to the numerical feature.")
@@ -50,56 +50,45 @@ class NumericalFeature(Feature):
             ScalerType.NORMALIZER: Normalizer(),
         }
         return scaler_map[self.scaler_type]
+    
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [pl.Boolean, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Float32, pl.Float64, pl.Decimal]:
+                current_dtype = df[column_name].dtype
+                raise ValueError(f"Column '{column_name}'  with dtype {current_dtype} must be of a numeric type (Boolean, Integer, Unsigned Integer, Float, or Decimal) .")
 
-    @model_validator(mode='before')
-    def validate_numerical_column(cls, values):
-        column_name = values.get("column_name")
-        context = values.get("context")
-        if context is not None and isinstance(context, pl.DataFrame):
-            if column_name not in context.columns:
-                raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-            if context[column_name].dtype not in [
-                pl.Boolean,
-                pl.Int8,
-                pl.Int16,
-                pl.Int32,
-                pl.Int64,
-                pl.UInt8,
-                pl.UInt16,
-                pl.UInt32,
-                pl.UInt64,
-                pl.Float32,
-                pl.Float64,
-                pl.Decimal,
-            ]:
-                raise ValueError(
-                    f"Column '{column_name}' must be of a numeric type (Boolean, Integer, Unsigned Integer, Float, or Decimal)."
-                )
-        return values
+        return v
+
 
 class EmbeddingFeature(NumericalFeature):
-    @model_validator(mode='before')
-    def validate_embedding_column(cls, values):
-        column_name = values.get("column_name")
-        context = values.get("context")
-        if context is not None and isinstance(context, pl.DataFrame):
-            if column_name not in context.columns:
-                raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-            if context[column_name].dtype not in [pl.List(pl.Float32), pl.List(pl.Float64)]:
-                raise ValueError(f"Column '{column_name}' must be of type pl.List(pl.Float32) or pl.List(pl.Float64).")
-        return values
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [pl.List(pl.Float32), pl.List(pl.Float64)]:
+                current_dtype = df[column_name].dtype
+                raise ValueError(f"Column '{column_name}'  with dtype {current_dtype} must be of type pl.List(pl.Float32) or pl.List(pl.Float64).")
+        return v
 
 class CategoricalFeature(Feature):
     one_hot_encoding: bool = Field(True, description="Whether to apply one-hot encoding to the categorical feature.")
 
-    @model_validator(mode='before')
-    def validate_categorical_column(cls, values):
-        column_name = values.get("column_name")
-        context = values.get("context")
-        if context is not None and isinstance(context, pl.DataFrame):
-            if column_name not in context.columns:
-                raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-            if context[column_name].dtype not in [
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [
                 pl.Utf8,
                 pl.Categorical,
                 pl.Enum,
@@ -112,32 +101,31 @@ class CategoricalFeature(Feature):
                 pl.UInt32,
                 pl.UInt64,
             ]:
+                current_dtype = df[column_name].dtype
                 raise ValueError(
-                    f"Column '{column_name}' must be of type pl.Utf8, pl.Categorical, pl.Enum, or an integer type."
+                    f"Column '{column_name}' with dtype {current_dtype}  must be of type pl.Utf8, pl.Categorical, pl.Enum, or an integer type."
                 )
-        return values
+        return v
 
 class FeatureSet(BaseModel):
     numerical: List[NumericalFeature] = []
     embeddings: List[EmbeddingFeature] = []
     categorical: List[CategoricalFeature] = []
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = "allow"
+
+    def all_features(self):
+        return self.numerical + self.embeddings + self.categorical
+    def column_names(self):
+        return [feature.column_name for feature in self.all_features()]
+    def joined_names(self):
+        return "_".join(sorted(self.column_names()))
 
 class InputConfig(BaseModel):
     feature_sets: List[FeatureSet]
+    target_column: str = Field("target", description="The target column to predict.")
+    save_folder: Optional[str] = None
 
-    def validate_with_dataframe(self, df: pl.DataFrame):
-        for feature_set in self.feature_sets:
-            for feature_type in ["numerical", "embeddings", "categorical"]:
-                for feature in getattr(feature_set, feature_type):
-                    feature.model_validate({"context": df, **feature.dict()})
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = "allow"
 
 class ClassifierName(str, Enum):
     LOGISTIC_REGRESSION = "LogisticRegression"
@@ -149,7 +137,7 @@ class BaseClassifierConfig(BaseModel):
     
 
 class LogisticRegressionConfig(BaseClassifierConfig):
-    classifier_name: Literal[ClassifierName.LOGISTIC_REGRESSION] = ClassifierName.LOGISTIC_REGRESSION
+    classifier_name: Literal[ClassifierName.LOGISTIC_REGRESSION] = Field(ClassifierName.LOGISTIC_REGRESSION)
     n_jobs: int = Field(-1, description="Number of CPU cores to use.")
     penalty: str = Field("l2", description="Specify the norm of the penalty.")
     dual: bool = Field(False, description="Dual or primal formulation.")
@@ -167,7 +155,7 @@ class LogisticRegressionConfig(BaseClassifierConfig):
     l1_ratio: Optional[float] = Field(None, description="Elastic-Net mixing parameter.")
 
 class RandomForestClassifierConfig(BaseClassifierConfig):
-    classifier_name: Literal[ClassifierName.RANDOM_FOREST] = ClassifierName.RANDOM_FOREST
+    classifier_name: Literal[ClassifierName.RANDOM_FOREST] = Field(ClassifierName.RANDOM_FOREST)
     n_jobs: int = Field(-1, description="Number of CPU cores to use.")
     n_estimators: int = Field(100, description="The number of trees in the forest.")
     criterion: str = Field("gini", description="The function to measure the quality of a split.")
@@ -190,7 +178,7 @@ class RandomForestClassifierConfig(BaseClassifierConfig):
     monotonic_cst: Optional[Dict[str, int]] = Field(None, description="Monotonic constraint to enforce on each feature.")
 
 class HistGradientBoostingClassifierConfig(BaseClassifierConfig):
-    classifier_name: Literal[ClassifierName.HIST_GRADIENT_BOOSTING] = ClassifierName.HIST_GRADIENT_BOOSTING
+    classifier_name: Literal[ClassifierName.HIST_GRADIENT_BOOSTING] = Field(ClassifierName.HIST_GRADIENT_BOOSTING)
     loss: str = Field("log_loss", description="The loss function to use in the boosting process.")
     learning_rate: float = Field(0.1, description="The learning rate, also known as shrinkage.")
     max_iter: int = Field(100, description="The maximum number of iterations of the boosting process.")
@@ -214,32 +202,35 @@ class HistGradientBoostingClassifierConfig(BaseClassifierConfig):
     class_weight: Optional[Union[str, Dict[Any, float]]] = Field(None, description="Weights associated with classes.")
 
 class ClassifierConfig(BaseModel):
-    classifier: Union[LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig]
+    classifiers: List[Union[LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig]]
 
 
 class FoldMode(str, Enum):
     COMBINATORIAL = "Combinatorial"
     MONTE_CARLO = "MonteCarlo"
 
-class KFoldConfig(BaseModel):
+class BaseFoldConfig(BaseModel):
     k: int = Field(5, description="Number of folds. Divides the data into k equal parts. last k can be smaller or larger than the rest depending on the // of the data by k." )
     n_test_folds: int = Field(1, description="Number of test folds to use for cross-validation. Must be strictly less than k. if the fold mode is montecarlo they are sampled first and then the rest are used for training. If the fold mode is combinatorial the all symmetric combinations n_test out of k are sampled.")
     fold_mode: FoldMode = Field(FoldMode.COMBINATORIAL, description="The mode to use for splitting the data into folds. Combinatorial splits the data into k equal parts, while Monte Carlo randomly samples the k equal parts without replacement.")
     shuffle: bool = Field(True, description="Whether to shuffle the data before splitting.")
     random_state: Optional[int] = Field(None, description="Seed for random number generation. In the case of montecarlo cross-validation at each replica the seed is increased by 1 mantaining replicability while ensuring that the samples are different.")
     montecarlo_replicas: int = Field(5, description="Number of random replicas to use for montecarlo cross-validation.")
-    
+
+class KFoldConfig(BaseFoldConfig):
+    pass
+
 class StratificationMode(str, Enum):
     PROPORTIONAL = "Proportional"
     UNIFORM_STRICT = "UniformStrict"
     UNIFORM_RELAXED = "UniformRelaxed"
 
-class StratifiedConfig(KFoldConfig):
+class StratifiedConfig(BaseFoldConfig):
     groups: List[str] = Field([], description="The df column(s) to use for stratification. They will be used for a group-by operation to ensure that the stratification is done within each group.")
     strat_mode : StratificationMode = Field(StratificationMode.PROPORTIONAL, description="The mode to use for stratification. Proportional ensures that the stratification is done within each group mantaining the original proportion of each group in the splits, this is done by first grouping and then breaking each group inot k equal parts, this ensure all the samples in each group are in train and test with the same proprtion. Uniform instead ensures that each group has the same number of samples in each train and test fold, this is not compatible with the proportional mode.")
     group_size : Optional[int] = Field(None, description="The number of samples to use for each group in the stratificaiton it will only be used if the strat_mode is uniform or uniform relaxed. If uniform relaxed is used the group size will be used as a target size for each group but if a group has less samples than the target size it will be used as is. If uniform strict is used the group_size for all groups will be forced to the min(group_size, min_samples_in_group).")
 
-class PurgedConfig(KFoldConfig):
+class PurgedConfig(BaseFoldConfig):
     groups: List[str] = Field([], description="The df column(s) to use for purging. They will be used for a group-by operation to ensure that the purging at the whole group level. K is going to used to determine the fraction of groups to purge from train and restrict to test. When the mode is montecarlo the groups are sampled first and then the rest are used for training. If the fold mode is combinatorial the all symmetric combinations n_test out of k groups partitions are sampled")
 
 class CVConfig(BaseModel):
