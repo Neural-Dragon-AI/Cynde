@@ -1,7 +1,8 @@
 import polars as pl
-from typing import List, Optional
+from pydantic import BaseModel
+from typing import List, Optional, Tuple, Generator
 import itertools
-from cynde.functional.predict.types import CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
+from cynde.functional.predict.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
 
 from cynde.functional.predict.preprocess import check_add_cv_index
 
@@ -177,3 +178,52 @@ def stratified_montecarlo(df:pl.DataFrame, config: StratifiedConfig) -> CVSummar
         replica_numbers =montecarlo_replicas,
     )
     return summary
+
+def cv_from_config(df:pl.DataFrame,config:BaseFoldConfig) -> CVSummary:
+    if isinstance(config,KFoldConfig) and config.fold_mode.COMBINATORIAL:
+        return kfold_combinatorial(df,config)
+    elif isinstance(config,KFoldConfig) and config.fold_mode.MONTE_CARLO:
+        return kfold_montecarlo(df,config)
+    elif isinstance(config,PurgedConfig) and config.fold_mode.COMBINATORIAL:
+        return purged_combinatorial(df,config)
+    elif isinstance(config,PurgedConfig) and config.fold_mode.MONTE_CARLO:
+        return purged_montecarlo(df,config)
+    elif isinstance(config,StratifiedConfig) and config.fold_mode.COMBINATORIAL:
+        return stratified_combinatorial(df,config)
+    elif isinstance(config,StratifiedConfig) and config.fold_mode.MONTE_CARLO:
+        return stratified_montecarlo(df,config)
+    else:
+        raise ValueError(f"Unsupported fold configuration: {config}")
+
+def train_test_val(df:pl.DataFrame,train_idx:pl.DataFrame,val_idx:pl.DataFrame,test_idx:pl.DataFrame) -> Tuple[pl.DataFrame,pl.DataFrame,pl.DataFrame]:
+    print("training idx",train_idx)
+    df_train = df.filter(pl.col("cv_index").is_in(train_idx["cv_index"]))
+    df_val = df.filter(pl.col("cv_index").is_in(val_idx["cv_index"]))
+    df_test = df.filter(pl.col("cv_index").is_in(test_idx["cv_index"]))
+    return df_train,df_val,df_test
+
+def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generator[PipelineInput,None,None]:
+    cv_config = task_config.cv_config
+    input_config = task_config.input_config
+    classifiers_config = task_config.classifiers_config
+    for r_o in range(cv_config.outer_replicas):
+        outer_cv = cv_from_config(df_idx, cv_config.outer)
+        #Outer Folds -- this is an instance of an outer cross-validation fold
+        for k_o, (dev_idx_o,test_idx_o) in enumerate(outer_cv.yield_splits()):
+            df_test_idx_o = df_idx.filter(pl.col("cv_index").is_in(test_idx_o))
+            df_dev_idx_o = df_idx.filter(pl.col("cv_index").is_in(dev_idx_o))
+            #Inner Replicas
+            for r_i in range(cv_config.inner_replicas):
+                inner_cv = cv_from_config(df_dev_idx_o, cv_config.inner)
+                #Inner Folds -- this is an instance of an inner cross-validation fold
+                for k_i,(train_idx_i,val_idx_i) in enumerate(inner_cv.yield_splits()):
+                    df_val_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(val_idx_i))
+                    df_train_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(train_idx_i))
+                    n_train = df_train_idx_o_i.shape[0]
+                    n_val = df_val_idx_o_i.shape[0]
+                    n_test = df_test_idx_o.shape[0]
+                    print(f"For outer replica {r_o}, outer fold {k_o}, inner replica {r_i}, inner fold {k_i}: train {n_train}, val {n_val}, test {n_test} samples.")
+                    #Feature types loop
+                    for feature_index,feature_set in enumerate(input_config.feature_sets):
+                        for classifier in classifiers_config.classifiers:
+                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier)

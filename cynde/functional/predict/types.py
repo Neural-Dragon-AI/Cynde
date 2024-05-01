@@ -66,6 +66,9 @@ class NumericalFeature(Feature):
 
 
 class EmbeddingFeature(NumericalFeature):
+    embedder: str = Field("text-embedding-3-small", description="The embedder model that generated the vector.")
+    embedding_size:int = Field(1536, description="The size of the embedding vector.")
+
     @field_validator("column_name")
     @classmethod
     def column_correct_type(cls, v: str, info: ValidationInfo):
@@ -124,6 +127,7 @@ class InputConfig(BaseModel):
     feature_sets: List[FeatureSet]
     target_column: str = Field("target", description="The target column to predict.")
     save_folder: Optional[str] = None
+    remote_folder: Optional[str] = None
 
 
 
@@ -239,6 +243,11 @@ class CVConfig(BaseModel):
     outer: Optional[Union[KFoldConfig,StratifiedConfig,PurgedConfig]] = None
     outer_replicas: int = Field(1, description="Number of random replicas to use for outer cross-validation.")
 
+class PredictConfig(BaseModel):
+    cv_config: CVConfig
+    input_config: InputConfig
+    classifiers_config: ClassifierConfig
+
 class CVSummary(BaseModel):
     cv_config: Union[KFoldConfig,StratifiedConfig,PurgedConfig] = Field(description="The cross-validation configuration. Required for the summary.")
     train_indexes: List[List[int]] = Field(description="The indexes of the training samples for each fold or replica.")
@@ -251,3 +260,27 @@ class CVSummary(BaseModel):
             train_series = pl.Series(train_idx)
             test_series = pl.Series(test_idx)
             yield train_series, test_series
+
+class PipelineInput(BaseModel):
+    train_idx:pl.DataFrame
+    val_idx:pl.DataFrame
+    test_idx:pl.DataFrame
+    feature_index:int
+    cls_config:BaseClassifierConfig
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+class PipelineResults(BaseModel):
+    val_predictions:pl.DataFrame
+    test_predictions:pl.DataFrame
+    val_accuracy:float
+    test_accuracy:float
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+
+

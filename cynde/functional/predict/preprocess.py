@@ -40,14 +40,30 @@ def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
     """ Saves .parquet for each feature set in input_config """
     save_folder = input_config.save_folder
     for feature_set in input_config.feature_sets:
-        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),[column_name for column_name in feature_set.column_names()])
+        column_names = feature_set.column_names()
+        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
+        print(f"selected columns: {feature_set_df.columns}")
+        #explodes all the embedding columns into list of columns
+        # for feature in feature_set.embeddings:
+        #     print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
+        #     feature_set_df = map_list_to_cols(feature_set_df,feature.column_name)
+
         save_name = feature_set.joined_names()
         save_path = os.path.join(save_folder, f"{save_name}.parquet")
         feature_set_df.write_parquet(save_path)
 
-def load_preprocessed_features(feature_fold_path:str) -> Tuple[pl.DataFrame,pl.DataFrame,pl.DataFrame]:
+def load_preprocessed_features(input_config:InputConfig,feature_set_id:int,convert_embeddings:bool=True, remote:bool = False) -> pl.DataFrame:
     """ Loads the the train,val and test df for a specific feature set fold """
-    pass
+    folder = input_config.save_folder if not remote else input_config.remote_folder
+    feature_set = input_config.feature_sets[feature_set_id]
+    file_name = feature_set.joined_names()
+    file_path = os.path.join(folder, f"{file_name}.parquet")
+    df = pl.read_parquet(file_path)
+    if convert_embeddings:
+        for feature in feature_set.embeddings:
+            print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
+            df = map_list_to_cols(df,feature.column_name)
+    return df
 
 def validate_preprocessed_inputs(input_config:InputConfig) -> None:
     """ Validates the preprocessed input config checking if the .parquet files are present """
@@ -57,3 +73,9 @@ def validate_preprocessed_inputs(input_config:InputConfig) -> None:
         save_path = os.path.join(path, f"{save_name}.parquet")
         if not os.path.exists(save_path):
             raise ValueError(f"Preprocessed feature set '{save_name}' not found at '{save_path}'.")
+
+
+def map_list_to_cols(df:pl.DataFrame, list_column:str) -> pl.DataFrame:
+    """ Maps a list column to a DataFrame """
+    width = len(df[list_column][0])
+    return df.with_columns(pl.col(list_column).list.get(i).alias(f"{list_column}_{i}") for i in range(width)).select(pl.all().exclude(list_column))
