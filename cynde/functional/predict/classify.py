@@ -1,6 +1,6 @@
 from sklearn.ensemble import RandomForestClassifier,HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, matthews_corrcoef
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, PowerTransformer, QuantileTransformer, Normalizer, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -64,8 +64,8 @@ def evaluate_model(pipeline: Pipeline, X, y):
     """ Gotta make sure the returned predictions have the cv_index column"""
     predictions = pipeline.predict(X)
     accuracy = accuracy_score(y, predictions)
-    return predictions,accuracy
-
+    mcc = matthews_corrcoef(y,predictions)
+    return predictions,accuracy, mcc
 
 
 def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
@@ -77,6 +77,7 @@ def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> T
     pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
     print(pipeline)
     pipeline.fit(df_train,df_train["target"])
+    train_predictions, train_accuracy = evaluate_model(pipeline, df_train, df_train["target"])
     val_predictions,val_accuracy = evaluate_model(pipeline, df_val, df_val["target"])
     test_predictions,test_accuracy = evaluate_model(pipeline, df_test, df_test["target"])
     return PipelineResults(val_predictions=val_predictions,test_predictions=test_predictions,val_accuracy=val_accuracy,test_accuracy=test_accuracy)
