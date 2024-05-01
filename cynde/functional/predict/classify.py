@@ -65,7 +65,8 @@ def evaluate_model(pipeline: Pipeline, X, y):
     predictions = pipeline.predict(X)
     accuracy = accuracy_score(y, predictions)
     mcc = matthews_corrcoef(y,predictions)
-    return predictions,accuracy, mcc
+    pred_df = pl.DataFrame({"cv_index":X["cv_index"],"predictions":predictions})
+    return pred_df,accuracy, mcc
 
 
 def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
@@ -77,10 +78,18 @@ def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> T
     pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
     print(pipeline)
     pipeline.fit(df_train,df_train["target"])
-    train_predictions, train_accuracy = evaluate_model(pipeline, df_train, df_train["target"])
-    val_predictions,val_accuracy = evaluate_model(pipeline, df_val, df_val["target"])
-    test_predictions,test_accuracy = evaluate_model(pipeline, df_test, df_test["target"])
-    return PipelineResults(val_predictions=val_predictions,test_predictions=test_predictions,val_accuracy=val_accuracy,test_accuracy=test_accuracy)
+    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
+    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
+    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
+    return PipelineResults(train_predictions = train_predictions,
+                           val_predictions=val_predictions,
+                           test_predictions=test_predictions,
+                           train_accuracy=train_accuracy,
+                           train_mcc=train_mcc,
+                           val_accuracy=val_accuracy,
+                           val_mcc=val_mcc,
+                           test_accuracy=test_accuracy,
+                           test_mcc=test_mcc)
 
 def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
     """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 

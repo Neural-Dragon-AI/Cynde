@@ -273,10 +273,15 @@ class PipelineInput(BaseModel):
         extra = "allow"
 
 class PipelineResults(BaseModel):
+    train_predictions:pl.DataFrame
     val_predictions:pl.DataFrame
     test_predictions:pl.DataFrame
+    train_accuracy:float
+    train_mcc:float
     val_accuracy:float
+    val_mcc:float
     test_accuracy:float
+    test_mcc:float
 
     class Config:
         arbitrary_types_allowed = True
