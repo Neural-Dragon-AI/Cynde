@@ -9,7 +9,6 @@ from cynde.functional.distributed_cv import train_nested_cv_from_np_modal, cv_st
 import cynde.functional as cf
 import os
 import polars as pl
-from polars.polars import PyExpr
 from typing import List, Optional, Tuple, Generator
 import time
 from cynde.functional.predict.types import PredictConfig, BaseClassifierConfig,StratifiedConfig,Feature,FeatureSet,NumericalFeature, CategoricalFeature,EmbeddingFeature, InputConfig, ClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
