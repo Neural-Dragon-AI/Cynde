@@ -32,7 +32,7 @@ feature_set_large_data = {"embeddings":[{"column_name":"conversations_text-embed
 input_config_data = {"feature_sets":[feature_set_small_data,feature_set_large_data],
                         "target_column":"target",
                         "save_folder":"C:/Users/Tommaso/Documents/Dev/Cynde/cynde_mount/",
-                        "remote_path":"/root/cynde_mount"}
+                        "remote_folder":"/root/cynde_mount"}
 
 
 

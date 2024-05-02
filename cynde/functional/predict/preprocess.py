@@ -59,6 +59,8 @@ def load_preprocessed_features(input_config:InputConfig,feature_set_id:int,conve
 
     feature_set = input_config.feature_sets[feature_set_id]
     file_name = feature_set.joined_names()
+    if file_name is None:
+        raise ValueError(f"Feature set {feature_set_id} not found in input config.")
     file_path = os.path.join(folder, f"{file_name}.parquet")
     df = pl.read_parquet(file_path)
     if convert_embeddings:

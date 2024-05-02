@@ -126,8 +126,9 @@ class FeatureSet(BaseModel):
 class InputConfig(BaseModel):
     feature_sets: List[FeatureSet]
     target_column: str = Field("target", description="The target column to predict.")
+    remote_folder: str = Field("/root/cynde_mount", description="The remote folder to save the preprocessed features.")
+
     save_folder: Optional[str] = None
-    remote_folder: Optional[str] = None
 
 
 
