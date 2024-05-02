@@ -14,7 +14,7 @@ stub = modal.Stub("distributed_cv")
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken")
     
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .env({"CYNDE_DIR": "/opt/cynde"})
@@ -70,4 +70,7 @@ def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl
     all_results = []
     for result in predict_pipeline_distributed.map(list(nested_cv)):
         all_results.append(result)
+    re_validated_results = []
+    for result in all_results:
+        re_validated_results.append(PipelineResults.model_validate(result))
     print("Finished!! " ,len(all_results))
