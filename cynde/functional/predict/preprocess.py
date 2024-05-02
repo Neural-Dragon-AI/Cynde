@@ -55,6 +55,8 @@ def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
 def load_preprocessed_features(input_config:InputConfig,feature_set_id:int,convert_embeddings:bool=True, remote:bool = False) -> pl.DataFrame:
     """ Loads the the train,val and test df for a specific feature set fold """
     folder = input_config.save_folder if not remote else input_config.remote_folder
+    print("""Loading from folder: {}""".format(folder))
+
     feature_set = input_config.feature_sets[feature_set_id]
     file_name = feature_set.joined_names()
     file_path = os.path.join(folder, f"{file_name}.parquet")

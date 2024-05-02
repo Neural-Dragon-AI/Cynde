@@ -226,4 +226,4 @@ def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generat
                     #Feature types loop
                     for feature_index,feature_set in enumerate(input_config.feature_sets):
                         for classifier in classifiers_config.classifiers:
-                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier)
+                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier,input_config=input_config)

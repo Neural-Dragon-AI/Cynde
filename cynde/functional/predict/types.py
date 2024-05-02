@@ -267,6 +267,7 @@ class PipelineInput(BaseModel):
     test_idx:pl.DataFrame
     feature_index:int
     cls_config:BaseClassifierConfig
+    input_config : InputConfig
 
     class Config:
         arbitrary_types_allowed = True
