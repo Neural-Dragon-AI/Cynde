@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel, conint, ValidationError
 from typing import List, Optional
 from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
+from cynde.deploy.types import TGIRequest, LLamaInst3Request
 
 MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
 
@@ -112,42 +113,7 @@ class Model:
         self.launcher.terminate()
 
     @method()
-    async def generate(self, prompt: Prompt) :
-        schema = prompt.output_schema
-        repetition_penalty = prompt.repetition_penalty
-        prompt = self.template.format(system_prompt=prompt.system_prompt,user_message=prompt.user_message)
-
-        
-        if schema is None:
-            result = await self.client.generate(
-                prompt, max_new_tokens=1024, stop_sequences=["<|eot_id|>"]
-            )
-        else:
-            
-            result = await self.client.generate(
-                prompt, max_new_tokens=1024, decoder_input_details=False,
-        seed=1, stop_sequences=["<|eot_id|>"], repetition_penalty=repetition_penalty,grammar={
-            "type": "json",
-            "value": schema
-        }
-            )
+    async def generate(self, request: LLamaInst3Request) :  
+        result = await self.client.generate(**request.model_dump())
 
         return result
-
-    @method()
-    async def generate_stream(self, question: str):
-        prompt = self.template.format(user=question)
-
-        async for response in self.client.generate_stream(
-            prompt, max_new_tokens=1024, stop_sequences=["<|eot_id|>"]
-        ):
-            if (
-                not response.token.special
-                and response.token.text != "<|eot_id|>"
-            ):
-                yield response.token.text
-
-
-
-    
-

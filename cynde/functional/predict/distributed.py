@@ -14,7 +14,7 @@ stub = modal.Stub("distributed_cv")
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
     
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .env({"CYNDE_DIR": "/opt/cynde"})
