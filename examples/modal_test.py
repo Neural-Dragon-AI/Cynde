@@ -16,7 +16,7 @@ from sklearn.pipeline import Pipeline
 import modal
 
 
-from cynde.functional.predict.distributed import stub,datascience_image,train_nested_cv_distributed
+from cynde.functional.predict.distributed import app,datascience_image,train_nested_cv_distributed
 
 def load_minihermes_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\OpenHermes-2.5_embedded.parquet") -> pl.DataFrame:
     return pl.read_parquet(data_path)
@@ -67,6 +67,6 @@ task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers
 
 
 
-@stub.local_entrypoint()
+@app.local_entrypoint()
 def main():
     train_nested_cv_distributed(df,task)
