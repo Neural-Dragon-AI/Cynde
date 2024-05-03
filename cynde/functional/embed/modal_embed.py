@@ -26,6 +26,8 @@ def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
     for request in requests:
         response = f.remote(request)
         responses.append(response)
+    #vstack the responses
+    responses = np.vstack(responses)
     input_column_name = embed_cfg.column
     output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
     df_responses = pl.DataFrame(data={output_column_name:responses})
