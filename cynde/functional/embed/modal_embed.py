@@ -2,7 +2,7 @@ import modal
 from pydantic import BaseModel,conint,ValidationError,Field
 from typing import List, Optional
 import polars as pl
-from cynde.deploy.types import EmbeddingRequest
+from cynde.functional.embed.types import EmbeddingRequest
 import numpy as np
 
 class EmbedConfig(BaseModel):
