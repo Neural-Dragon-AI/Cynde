@@ -9,7 +9,7 @@ from cynde.functional.predict.classify import create_pipeline ,evaluate_model
 
 
 
-stub = modal.Stub("distributed_cv")
+app = modal.App("distributed_cv")
     
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
@@ -27,7 +27,7 @@ with datascience_image.imports():
 
 
 #define the distributed classification method
-@stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
+@app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
 def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
     input_config = pipeline_input.input_config
     feature_set = input_config.feature_sets[pipeline_input.feature_index]
