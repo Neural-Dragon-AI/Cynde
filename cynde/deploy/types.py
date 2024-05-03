@@ -2,6 +2,8 @@ from pydantic import BaseModel, conint, ValidationError, Field
 from typing import List, Optional
 from text_generation.types import Grammar,Response
 
+class EmbeddingRequest(BaseModel):
+    inputs: str
 class TGIRequest(BaseModel):
     prompt: str
     do_sample: bool = False

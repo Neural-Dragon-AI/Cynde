@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List
 from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
+from cynde.deploy.types import EmbeddingRequest
 
 MODEL_ID = "BAAI/bge-small-en-v1.5"
 BATCH_SIZE = 512
@@ -19,8 +20,7 @@ LAUNCH_FLAGS = [
     str(BATCH_SIZE * 512),
 ]
 
-class EmbeddingRequest(BaseModel):
-    inputs: str
+
 
 def download_model():
     subprocess.run(

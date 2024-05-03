@@ -8,7 +8,6 @@ from cynde.functional.generate.types import LLamaInstruction,InstructionConfig
 from pydantic._internal._model_construction import ModelMetaclass
 
 
-f = modal.Function.lookup("example-tgi-Meta-Llama-3-8B-Instruct", "Model.generate")
 
 def generate_instructions(df:pl.DataFrame, instruction:InstructionConfig) -> List[LLamaInstruction]:
     system_prompt = instruction.system_prompt
