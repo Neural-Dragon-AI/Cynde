@@ -1,65 +1,52 @@
-Here's the updated mermaid graph incorporating your suggestions:
+Apologies for the confusion. Let me update the graph based on your design idea:
 
 ```mermaid
-graph TD
-    A[DataFrame] --> B[cynde.functional.embed]
-    C[DataFrame] --> D[cynde.functional.generate]
-    E[DataFrame] --> F[cynde.functional.predict.train]
-    F --> G[cynde.functional.predict.predict]
+graph LR
+    subgraph Input DataFrames
+        A[DataFrame str] --> |str| C[cynde.functional.generate]
+        B[DataFrame list float] --> |list float| D[cynde.functional.predict]
+        B --> |list float| E[cynde.functional.embed]
+        F[DataFrame float] --> |float| D
+        G[DataFrame enum] --> |enum| D
+        G --> |enum| C
+        H[DataFrame struct] --> |struct| C
+    end
 
-    H[Pydantic Model] --> D
+    subgraph Output DataFrames
+        C --> I[DataFrame str]
+        C --> J[DataFrame enum]
+        C --> K[DataFrame struct]
+        D --> L[DataFrame enum]
+        E --> M[DataFrame list float]
+    end
 
-    A --> |list float| I[Embedding DataFrame]
-    C --> |str| J[Generation DataFrame]
-    C --> |enum| K[Enum DataFrame]
-    C --> |struct| L[Struct DataFrame]
-    E --> |feature types| M[Training DataFrame]
-    G --> |predictions| N[Prediction DataFrame]
+    N[Pydantic Model] --> C
 
-    B --> O{Embedding Method}
-    O --> P[OpenAI API]
-    O --> Q[Deploy TEI Server]
-    O --> R[JSON Caching]
-    P --> I
-    Q --> I
-    R --> I
-
-    D --> S{Generation Method}
-    S --> T[OpenAI API]
-    S --> U[Deploy TGI Server]
-    S --> V[JSON Caching]
-    T --> J
-    T --> K
-    T --> L
-    U --> J
-    U --> K
-    U --> L
-    V --> J
-    V --> K
-    V --> L
-
-    F --> W[Train Boosted Trees]
-    W --> X[Deploy Model Server]
-
-    G --> Y[Predict with Boosted Trees]
-    Y --> N
+    classDef input fill:#d5e8d4,stroke:#82b366,stroke-width:2px;
+    classDef output fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px;
+    class A,B,F,G,H input;
+    class I,J,K,L,M output;
 ```
 
 In this updated graph:
 
-1. There are three separate DataFrames for each type of data:
-   - Embedding DataFrame (`list float`)
-   - Generation DataFrame (`str`, `enum`, `struct`)
-   - Training DataFrame (`feature types`)
+1. The input DataFrames are represented in green and have different types:
+   - DataFrame str
+   - DataFrame list float
+   - DataFrame float
+   - DataFrame enum
+   - DataFrame struct
 
-2. The `cynde.functional.embed` module takes a DataFrame as input and outputs an Embedding DataFrame (`list float`).
+2. The output DataFrames are represented in blue and have the same names as the input DataFrames, but with different types based on the output of each module:
+   - cynde.functional.generate outputs DataFrame str, DataFrame enum, and DataFrame struct
+   - cynde.functional.predict outputs DataFrame enum
+   - cynde.functional.embed outputs DataFrame list float
 
-3. The `cynde.functional.generate` module takes a DataFrame as input and outputs a Generation DataFrame, which can be of type `str`, `enum`, or `struct`. The Pydantic Model is positioned on the right side of the DataFrame input to the generate module.
+3. The connections between the input DataFrames and the Cynde modules are labeled with the respective types:
+   - DataFrame str and DataFrame enum can go into cynde.functional.generate
+   - DataFrame list float, DataFrame float, and DataFrame enum can go into cynde.functional.predict
+   - DataFrame list float can go into cynde.functional.embed
 
-4. The `cynde.functional.predict.train` module takes a DataFrame with `feature types` as input and trains boosted trees models, which are then deployed to a model server.
+4. The Pydantic Model is connected to cynde.functional.generate, indicating that it can be used as input for structured generation.
 
-5. The `cynde.functional.predict.predict` module uses the deployed boosted trees models to make predictions, which are then returned as a Prediction DataFrame.
-
-6. The different embedding and generation methods (OpenAI API, Deploy TEI/TGI Server, JSON Caching) are shown connecting to their respective output DataFrames, illustrating the two mapping directions discussed earlier.
-
-This updated graph provides a clearer representation of the different data types, the position of the Pydantic Model in relation to the generate module, and the connections between the predict train and predict modules.
+This graph provides a clear overview of the type-safe compositionality of the different methods in Cynde. It shows the allowed input and output types for each module and how they can be combined to create data processing pipelines.
