@@ -1,55 +1,58 @@
-Thank you for the further clarifications. Here's the updated mermaid graph incorporating your latest suggestions:
+I apologize for the confusion. Here's the updated mermaid graph with a single node per type for both input and output, and the correct connections between the modules:
 
 ```mermaid
 graph LR
     A[DataFrame<br>str] --> B[cynde.functional.embed]
-    C[DataFrame<br>str] --> D[cynde.functional.generate]
-    E[DataFrame<br>float] --> F[cynde.functional.predict.train]
+    A --> C[cynde.functional.generate]
+    D[DataFrame<br>float] --> C
+    E[DataFrame<br>enum] --> C
+    D --> F[cynde.functional.predict.train]
+    E --> F
     G[DataFrame<br>list_float] --> F
-    I[DataFrame<br>enum] --> F
 
-    J[Pydantic Model] --> D
+    H[Pydantic Model] --> C
 
-    B --> K[JSON Caching]
-    B --> L[Modal Deploy TEI]
-    K --> M[OpenAI API]
-    L --> N[Remote Inference TEI]
-    M --> O[JSON Caching]
-    N --> P[DataFrame<br>list_float]
-    O --> P
+    B --> I[JSON Caching]
+    B --> J[Modal Deploy TEI]
+    I --> K[OpenAI API]
+    J --> L[Remote Inference TEI]
+    K --> M[JSON Caching]
+    L --> N[DataFrame<br>list_float]
+    M --> N
 
-    D --> Q[JSON Caching]
-    D --> R[Modal Deploy TGI]
-    Q --> S[OpenAI API]
-    R --> T[Remote Inference TGI]
-    S --> U[JSON Caching]
-    T --> V[DataFrame<br>struct]
-    T --> W[DataFrame<br>str]
-    U --> V
-    U --> W
+    C --> O[JSON Caching]
+    C --> P[Modal Deploy TGI]
+    O --> Q[OpenAI API]
+    P --> R[Remote Inference TGI]
+    Q --> S[JSON Caching]
+    R --> T[DataFrame<br>struct]
+    R --> A
+    R --> E
+    S --> T
+    S --> A
+    S --> E
 
-    F --> X[Deploy Train Server]
-    X --> Y[Save in Model Volume]
-    Y --> Z[Deploy Inference Server]
-    Z --> AA[cynde.functional.predict.predict]
-    AA --> AB[DataFrame<br>enum]
-    T --> AC[DataFrame<br>enum]
+    F --> U[Deploy Train Server]
+    U --> V[Save in Model Volume]
+    V --> W[Deploy Inference Server]
+    W --> X[cynde.functional.predict.predict]
+    X --> E
 ```
 
-The changes made based on your latest suggestions are:
+In this updated graph:
 
-1. The preprocessing nodes have been removed, and `cynde.functional.embed` and `cynde.functional.generate` are now directly connected to the JSON Caching and Modal Deploy TEI/TGI paths.
-
-2. The "Train Model" node has been removed as it was redundant.
-
-3. Instead of having a single node with all the types for each input, there are now separate nodes for each type:
+1. There is a single node per type for both input and output:
    - DataFrame (str) is connected to `cynde.functional.embed` and `cynde.functional.generate`.
-   - DataFrame (float), DataFrame (list_float), and DataFrame (enum) are connected to `cynde.functional.predict.train`.
+   - DataFrame (float) and DataFrame (enum) are connected to `cynde.functional.generate` and `cynde.functional.predict.train`.
+   - DataFrame (list_float) is connected to `cynde.functional.predict.train`.
 
-4. In the output of `cynde.functional.generate`, the DataFrame (enum) has been moved to the bottom.
+2. The output connections have been updated:
+   - `cynde.functional.embed` outputs DataFrame (list_float).
+   - `cynde.functional.generate` outputs DataFrame (struct), DataFrame (str), and DataFrame (enum).
+   - `cynde.functional.predict.predict` outputs DataFrame (enum).
 
-5. The output of `cynde.functional.predict.predict` is now connected to the DataFrame (enum) node.
+3. The Pydantic Model is connected to `cynde.functional.generate`.
 
-6. The input for `cynde.functional.embed` has been updated to only accept DataFrame (str).
+4. The JSON Caching and Modal Deploy TEI/TGI paths are correctly connected to their respective modules and output data types.
 
-This updated graph accurately represents the flow of data through the different modules, with separate input nodes for each data type, the removal of redundant nodes, and the correct connections between the modules and their respective input and output data types.
+This graph accurately represents the flow of data through the different modules, with a single node per type for both input and output, and the correct connections between the modules and their respective input and output data types.
