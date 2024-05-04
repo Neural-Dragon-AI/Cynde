@@ -1,10 +1,10 @@
-I apologize for the confusion. Here's the updated mermaid graph based on your clarifications:
+I apologize for the syntax error in the mermaid graph. Here's the corrected version:
 
 ```mermaid
 graph LR
-    A[DataFrame<br>(float, list[float], enum)] --> B[cynde.functional.embed]
+    A[DataFrame<br>(float, list float, enum)] --> B[cynde.functional.embed]
     C[DataFrame<br>(str)] --> D[cynde.functional.generate]
-    E[DataFrame<br>(float, list[float], enum)] --> F[cynde.functional.predict.train]
+    E[DataFrame<br>(float, list float, enum)] --> F[cynde.functional.predict.train]
     F --> G[cynde.functional.predict.predict]
 
     H[Pydantic Model] --> D
@@ -13,7 +13,7 @@ graph LR
     I --> J[OpenAI API]
     I --> K[Deploy TEI Server]
     I --> L[JSON Caching]
-    J --> M[DataFrame<br>(list[float])]
+    J --> M[DataFrame<br>(list float)]
     K --> M
     L --> M
 
@@ -38,14 +38,18 @@ graph LR
     W --> X[DataFrame<br>(enum)]
 ```
 
-In this updated graph:
+The changes made to fix the syntax error are:
+
+- Replaced `list[float]` with `list float` in the input and output DataFrame nodes.
+
+Now the graph should render correctly and represent the following:
 
 1. The input DataFrames are separated by their types:
-   - DataFrame (float, list[float], enum): Can be used as input for `cynde.functional.embed` and `cynde.functional.predict.train`.
+   - DataFrame (float, list float, enum): Can be used as input for `cynde.functional.embed` and `cynde.functional.predict.train`.
    - DataFrame (str): Can be used as input for `cynde.functional.generate`.
 
 2. The output DataFrames are also separated by their types:
-   - DataFrame (list[float]): Output of `cynde.functional.embed`.
+   - DataFrame (list float): Output of `cynde.functional.embed`.
    - DataFrame (struct), DataFrame (enum), DataFrame (str): Outputs of `cynde.functional.generate`.
    - DataFrame (enum): Output of `cynde.functional.predict.predict`.
 
@@ -53,7 +57,7 @@ In this updated graph:
 
 4. The embedding and generation methods (OpenAI API, Deploy TEI/TGI Server, JSON Caching) are shown connecting to their respective output DataFrames.
 
-5. The `cynde.functional.predict.train` module takes a DataFrame (float, list[float], enum) as input, trains boosted trees models, and deploys them to a model server.
+5. The `cynde.functional.predict.train` module takes a DataFrame (float, list float, enum) as input, trains boosted trees models, and deploys them to a model server.
 
 6. The `cynde.functional.predict.predict` module uses the deployed boosted trees models to make predictions and returns a DataFrame (enum).
 
