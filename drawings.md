@@ -1,3 +1,6 @@
+
+
+```mermaid
 graph TD
     A[DataFrame] --> B[cynde.functional.embed]
     A --> C[cynde.functional.generate]
@@ -35,3 +38,4 @@ graph TD
     X --> Y[DataFrame]
 
     Z[Pydantic Model] --> C
+```
