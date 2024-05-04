@@ -1,4 +1,4 @@
-
+I apologize for the confusion. Let me correct the mermaid graph to fix the parsing error:
 
 ```mermaid
 graph TD
@@ -11,7 +11,7 @@ graph TD
     F --> G[OpenAI API]
     F --> H[Deploy TEI Server]
     F --> I[JSON Caching]
-    G --> J[list[float]]
+    G --> J[list float]
     H --> J
     I --> J
     J --> K[DataFrame]
