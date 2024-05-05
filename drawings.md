@@ -13,7 +13,7 @@ graph TD
     A --> I[Data Processing]
     I --> J[Polars DataFrames]
     I --> K[Pydantic Models]
-    I --> L[Gradient Boosted Trees <br> (scikit-learn)]
+    I --> L[Gradient Boosted Trees SKLearn]
     
     A --> M[Functional API]
     M --> N[cynde.functional.embed]
