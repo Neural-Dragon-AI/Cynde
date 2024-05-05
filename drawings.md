@@ -6,6 +6,7 @@ graph TD
     B --> C[Polars DataFrames]
     B --> D[Pydantic Models]
     B --> E[Gradient Boosted Trees SKLearn]
+    B --> O[Outlines]
     A --> P[Self-Hosted Deployments with Modal]
 
     P --> F[Autoscaling]
@@ -19,14 +20,14 @@ graph TD
     I --> K[Locally-Hosted]
     H --> M
     M --> N[Hugging Face TGI]
+    O --> N
     M --> O[Hugging Face TEI]
-
-    A --> P[Self-Hosted Deployments with Modal]
 
     A --> Q[Functional API]
     Q --> R[cynde.functional.embed]
     R --> S[Embedding Generation]
     Q --> T[cynde.functional.generate]
+    H --> Q
     T --> U[Structured Text Generation]
     U --> V[Pydantic with Outlines]
     Q --> W[cynde.functional.predict]
