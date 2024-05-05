@@ -30,7 +30,6 @@ graph LR
     T[DataFrame<br>struct] --> C
     E --> F[cynde.functional.predict.train]
     D[DataFrame<br>float] --> F
-    D --> F
     G[DataFrame<br>list_float] --> F
 
     B --> N[DataFrame<br>list_float]
