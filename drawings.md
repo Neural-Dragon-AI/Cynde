@@ -20,7 +20,7 @@ graph TD
     I --> K[Locally-Hosted]
     H --> M
     M --> N[Hugging Face TGI]
-    O --> N
+   
     M --> O[Hugging Face TEI]
 
     A --> Q[Functional API]
