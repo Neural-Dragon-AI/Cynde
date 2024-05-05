@@ -6,8 +6,11 @@ graph TD
     B --> C[Polars DataFrames]
     B --> D[Pydantic Models]
     B --> E[Gradient Boosted Trees SKLearn]
-    E --> F[Autoscaling]
+    A --> P[Self-Hosted Deployments with Modal]
+
+    P --> F[Autoscaling]
     F --> G[CPU Workload]
+    E --> G
 
     A --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
