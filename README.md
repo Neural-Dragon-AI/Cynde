@@ -26,10 +26,10 @@ Cynde is a Python framework designed to streamline the integration of large lang
 graph LR
     A[DataFrame<br>str] --> B[cynde.functional.embed]
     A --> C[cynde.functional.generate]
-    D[DataFrame<br>float] --> C
     E[DataFrame<br>enum] --> C
     T[DataFrame<br>struct] --> C
     E --> F[cynde.functional.predict.train]
+    D[DataFrame<br>float] --> F
     D --> F
     G[DataFrame<br>list_float] --> F
 
