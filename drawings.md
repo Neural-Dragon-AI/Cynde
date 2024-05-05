@@ -10,9 +10,9 @@ graph TD
     A --> P[Serverless Deployments with Modal]
 
     P --> F[Autoscaling]
-    F --> G[CPU Workload]
+    G[CPU Workload] --> F
     E --> G
-    F --> M[GPU Workload]
+   M[GPU Workload] --> F
 
     B --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
@@ -22,8 +22,6 @@ graph TD
     Ot --> N
     B --> N
     H --> O[Hugging Face TEI]
-    P --> N
-    P --> O
     N --> M
     O --> M
 
