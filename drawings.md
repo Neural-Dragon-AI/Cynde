@@ -4,33 +4,28 @@ Here's the updated mermaid graph based on your requirements:
 graph TD
     A[Cynde Framework] --> B[Data Processing]
     B --> C[Polars DataFrames]
-    B --> D[Pydantic Models]
     B --> E[Gradient Boosted Trees SKLearn]
-    B --> Ot[Outlines]
     A --> P[Serverless Deployments with Modal]
 
     F[Autoscaling] --> P
+    P --> F
     G[CPU Workload] --> F
-    F --> G
     E --> G
     M[GPU Workload] --> F
-    F --> M
 
     B --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
     I --> J[Cloud-Hosted]
     I --> K[Locally-Hosted]
     H --> N[Hugging Face TGI]
-    Ot --> N
-    B --> N
+  
     H --> O[Hugging Face TEI]
     N --> M
     O --> M
 
 
     A --> Y[Observability]
-    D --> Z[Logfire Integration]
-    Y --> Z
+    Y --> Z[Logfire Integration]
 ```
 
 In this updated mermaid graph:
