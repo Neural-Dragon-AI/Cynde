@@ -1,4 +1,4 @@
-Certainly! Here's the updated mermaid graph with the subgraphs removed and the DataFrame (struct) added as an input to `cynde.functional.generate`:
+Apologies for the oversight. Here's the updated mermaid graph with DataFrame (struct) added as an input to `cynde.functional.generate` and DataFrame (list_float) positioned at the bottom:
 
 ```mermaid
 graph LR
@@ -6,10 +6,10 @@ graph LR
     A --> C[cynde.functional.generate]
     D[DataFrame<br>float] --> C
     E[DataFrame<br>enum] --> C
-    G[DataFrame<br>list_float] --> F[cynde.functional.predict.train]
-    D --> F
-    E --> F
     T[DataFrame<br>struct] --> C
+    D --> F[cynde.functional.predict.train]
+    E --> F
+    G[DataFrame<br>list_float] --> F
 
     H[Pydantic Model] --> C
 
@@ -26,10 +26,10 @@ graph LR
     O --> Q[OpenAI API]
     P --> R[Remote Inference TGI]
     Q --> S[JSON Caching]
-    R --> T
+    R --> T2[DataFrame<br>struct]
     R --> A2[DataFrame<br>str]
     R --> E2[DataFrame<br>enum]
-    S --> T
+    S --> T2
     S --> A2
     S --> E2
 
@@ -45,7 +45,8 @@ In this updated graph:
 1. The input data types are represented by individual nodes:
    - DataFrame (str) is connected to `cynde.functional.embed` and `cynde.functional.generate`.
    - DataFrame (float), DataFrame (enum), and DataFrame (struct) are connected to `cynde.functional.generate`.
-   - DataFrame (float), DataFrame (enum), and DataFrame (list_float) are connected to `cynde.functional.predict.train`.
+   - DataFrame (float) and DataFrame (enum) are connected to `cynde.functional.predict.train`.
+   - DataFrame (list_float) is connected to `cynde.functional.predict.train` and positioned at the bottom.
 
 2. The output data types are represented by individual nodes:
    - DataFrame (str)
@@ -53,7 +54,7 @@ In this updated graph:
    - DataFrame (list_float)
    - DataFrame (struct)
 
-3. The connections between the input nodes and the modules remain the same, with the addition of DataFrame (struct) connected to `cynde.functional.generate`.
+3. The connections between the input nodes and the modules have been updated to include DataFrame (struct) connected to `cynde.functional.generate`.
 
 4. The output connections remain the same:
    - `cynde.functional.embed` outputs DataFrame (list_float).
@@ -64,4 +65,4 @@ In this updated graph:
 
 6. The JSON Caching and Modal Deploy TEI/TGI paths are correctly connected to their respective modules and output data types.
 
-This graph accurately represents the flow of data through the different modules, with the input and output data types represented as individual nodes without any subgraphs. The DataFrame (struct) has been added as an input to `cynde.functional.generate`, and the connections between the modules and their respective input and output data types are correctly represented.
+This graph accurately represents the flow of data through the different modules, with DataFrame (struct) added as an input to `cynde.functional.generate` and DataFrame (list_float) positioned at the bottom as it can only be used in `cynde.functional.predict.train`. The connections between the modules and their respective input and output data types are correctly represented.
