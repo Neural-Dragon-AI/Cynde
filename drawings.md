@@ -11,8 +11,10 @@ graph TD
 
     F[Autoscaling] --> P
     G[CPU Workload] --> F
+    F --> G
     E --> G
     M[GPU Workload] --> F
+    F --> M
 
     B --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
@@ -28,7 +30,7 @@ graph TD
 
     A --> Y[Observability]
     D --> Z[Logfire Integration]
-    B --> Z
+    Y --> Z
 ```
 
 In this updated mermaid graph:
