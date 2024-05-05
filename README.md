@@ -1,5 +1,5 @@
 
-# Cynde: Large Scale Intelligence Farming 🌿✨
+# 🌿 Cynde: Large Scale Intelligence Farming ✨
 python -m pip install pathto/Cynde
 
 Hard refactor ongoing, shamelessly pushing to main for interactive debugging with modal image constructions. The Readme are auto generated and the codebase has multiple md used for autoprompting during development.
