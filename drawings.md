@@ -23,15 +23,6 @@ graph TD
    
     M --> O[Hugging Face TEI]
 
-    A --> Q[Functional API]
-    Q --> R[cynde.functional.embed]
-    R --> S[Embedding Generation]
-    Q --> T[cynde.functional.generate]
-    H --> Q
-    T --> U[Structured Text Generation]
-    U --> V[Pydantic with Outlines]
-    Q --> W[cynde.functional.predict]
-    W --> X[Predictive Modeling]
 
     A --> Y[Observability]
     Y --> Z[Logfire Integration]
