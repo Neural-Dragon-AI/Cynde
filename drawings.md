@@ -1,49 +1,55 @@
-Apologies for the confusion. It seems like there was an issue with the formatting of the mermaid graph. Let me provide you with the corrected version:
+Here's the updated mermaid graph based on your requirements:
 
 ```mermaid
 graph TD
-    A[Cynde Framework] --> B[LLM Integration]
-    B --> C[OpenAI API-Compatible Servers]
-    C --> D[Cloud-Hosted]
-    C --> E[Locally-Hosted]
-    B --> F[Self-Hosted Deployments with Modal]
-    F --> G[Hugging Face TGI]
-    F --> H[Hugging Face TEI]
-    
-    A --> I[Data Processing]
-    I --> J[Polars DataFrames]
-    I --> K[Pydantic Models]
-    I --> L[Gradient Boosted Trees SKLearn]
-    
-    A --> M[Functional API]
-    M --> N[cynde.functional.embed]
-    N --> O[Embedding Generation]
-    M --> P[cynde.functional.generate]
-    P --> Q[Structured Text Generation]
-    Q --> R[Pydantic with Outlines]
-    M --> S[cynde.functional.predict]
-    S --> T[Predictive Modeling]
-    
-    F --> U[Autoscaling]
-    U --> V[GPU Workload]
-    U --> W[CPU Workload]
-    
-    A --> X[Observability]
-    X --> Y[Logfire Integration]
+    A[Cynde Framework] --> B[Data Processing]
+    B --> C[Polars DataFrames]
+    B --> D[Pydantic Models]
+    B --> E[Gradient Boosted Trees SKLearn]
+    E --> F[Autoscaling]
+    F --> G[CPU Workload]
+
+    A --> H[LLM Integration]
+    H --> I[OpenAI API-Compatible Servers]
+    I --> J[Cloud-Hosted]
+    I --> K[Locally-Hosted]
+    H --> L[Autoscaling]
+    L --> M[GPU Workload]
+    M --> N[Hugging Face TGI]
+    M --> O[Hugging Face TEI]
+
+    A --> P[Self-Hosted Deployments with Modal]
+
+    A --> Q[Functional API]
+    Q --> R[cynde.functional.embed]
+    R --> S[Embedding Generation]
+    Q --> T[cynde.functional.generate]
+    T --> U[Structured Text Generation]
+    U --> V[Pydantic with Outlines]
+    Q --> W[cynde.functional.predict]
+    W --> X[Predictive Modeling]
+
+    A --> Y[Observability]
+    Y --> Z[Logfire Integration]
 ```
 
-In this corrected mermaid graph:
+In this updated mermaid graph:
 
-1. The formatting issue with the "Gradient Boosted Trees (scikit-learn)" node has been fixed by adding a line break (`<br>`) to separate the text into two lines.
+1. The Cynde Framework node is at the top, with Data Processing, LLM Integration, Self-Hosted Deployments with Modal, Functional API, and Observability as its direct children.
 
-2. All other components and connections remain the same as in the previous graph.
+2. Under Data Processing:
+   - Polars DataFrames and Pydantic Models remain as key components.
+   - Gradient Boosted Trees SKLearn is connected to Autoscaling, which leads to CPU Workload, indicating that gradient boosting tasks are scaled using CPU resources.
 
-The graph now correctly represents the integrated architecture of the Cynde framework, including:
+3. LLM Integration is now a child of the Cynde Framework node:
+   - OpenAI API-Compatible Servers are divided into Cloud-Hosted and Locally-Hosted options.
+   - LLM Integration is connected to Autoscaling, which leads to GPU Workload.
+   - GPU Workload is then connected to Hugging Face TGI and Hugging Face TEI, indicating that these self-hosted deployments are scaled using GPU resources.
 
-- LLM Integration with OpenAI API-Compatible Servers (Cloud-Hosted and Locally-Hosted) and Self-Hosted Deployments with Modal (Hugging Face TGI and TEI).
-- Data Processing using Polars DataFrames, Pydantic Models, and Gradient Boosted Trees (scikit-learn).
-- Functional API with modules for embedding generation, structured text generation (using Pydantic with Outlines), and predictive modeling.
-- Autoscaling of GPU and CPU workloads handled by Modal for self-hosted deployments.
-- Observability with Logfire Integration for monitoring and analyzing runtime behavior and performance.
+4. Self-Hosted Deployments with Modal is now a separate child of the Cynde Framework node, representing the deployment aspect of the framework.
 
-This mermaid graph provides a clear and concise overview of how the different components of Cynde work together to enable scalable, flexible, and structured LLM-powered data processing workflows.
+5. The Functional API and its submodules (cynde.functional.embed, cynde.functional.generate, and cynde.functional.predict) remain the same, with Structured Text Generation connected to Pydantic with Outlines.
+
+6. Observability and its connection to Logfire Integration remain unchanged.
+
+This updated mermaid graph better represents the relationships between the different components of the Cynde framework. It highlights the separation of data processing, LLM integration, and self-hosted deployments, while also showing the connection between gradient boosted trees and CPU workload, as well as the connection between LLM integration, GPU workload, and the self-hosted deployments of Hugging Face TGI and TEI.
