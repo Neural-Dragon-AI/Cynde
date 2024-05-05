@@ -7,14 +7,14 @@ graph TD
     B --> D[Pydantic Models]
     B --> E[Gradient Boosted Trees SKLearn]
     B --> Ot[Outlines]
-    A --> P[Self-Hosted Deployments with Modal]
+    A --> P[Serverless Deployments with Modal]
 
     P --> F[Autoscaling]
     F --> G[CPU Workload]
     E --> G
     F --> M[GPU Workload]
 
-    A --> H[LLM Integration]
+    B --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
     I --> J[Cloud-Hosted]
     I --> K[Locally-Hosted]
