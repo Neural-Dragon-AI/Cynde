@@ -23,6 +23,46 @@ Cynde is a Python framework designed to streamline the integration of large lang
 
 7. **Predictive Modeling**: The `cynde.functional.predict` module enables predictive modeling tasks, focusing on categorical variables. It includes tools for feature engineering, model training, and evaluation, with support for distributed nested cross-validation of tree ensembles.
 
+```mermaid
+graph LR
+    A[DataFrame<br>str] --> B[cynde.functional.embed]
+    A --> C[cynde.functional.generate]
+    D[DataFrame<br>float] --> C
+    E[DataFrame<br>enum] --> C
+    T[DataFrame<br>struct] --> C
+    E --> F[cynde.functional.predict.train]
+    D --> F
+    G[DataFrame<br>list_float] --> F
+
+    H[Pydantic Model] --> C
+
+    B --> I[JSON Caching]
+    B --> J[Modal Deploy TEI]
+    I --> K[OpenAI Compatible API]
+    J --> L[Remote Inference TEI]
+    K --> M[JSON Caching]
+    L --> N[DataFrame<br>list_float]
+    M --> N
+
+    C --> O[JSON Caching]
+    C --> P[Modal Deploy TGI]
+    O --> Q[OpenAI Compatible API]
+    P --> R[Remote Inference TGI]
+    Q --> S[JSON Caching]
+    R --> T2[DataFrame<br>struct]
+    R --> A2[DataFrame<br>str]
+    R --> E2[DataFrame<br>enum]
+    S --> T2
+    S --> A2
+    S --> E2
+
+    F --> U[Modal Deploy TrainSK]
+    U --> V[Save in Model Volume]
+    V --> W[Modal Deploy PredictSK]
+    W --> X[cynde.functional.predict.predict]
+    X --> E2
+```
+
 ## Serverless Deployment and Autoscaling
 
 Cynde leverages Modal for serverless deployment and autoscaling of LLM processing. The framework provides deployment scripts for spinning up TGI and TEI servers on Modal, allowing for efficient and scalable processing of text generation and embedding tasks.
