@@ -60,9 +60,9 @@ graph LR
     U --> V[Save in Model Volume]
     V --> W[Modal Deploy PredictSK]
     F --> X[cynde.functional.predict.predict]
-    W --> F2[Remote Inference PredictSK]
+    W --> Z[Remote Inference PredictSK]
     X --> W
-    F2 --> E2
+    Z --> E2
 ```
 
 ## Serverless Deployment and Autoscaling
