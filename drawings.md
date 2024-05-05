@@ -19,7 +19,8 @@ graph TD
     I --> J[Cloud-Hosted]
     I --> K[Locally-Hosted]
     H --> N[Hugging Face TGI]
-   
+    Ot --> N
+    B --> N
     H --> O[Hugging Face TEI]
     N --> M
     O --> M
@@ -27,6 +28,7 @@ graph TD
 
     A --> Y[Observability]
     Y --> Z[Logfire Integration]
+    B --> Z
 ```
 
 In this updated mermaid graph:
