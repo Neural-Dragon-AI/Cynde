@@ -26,7 +26,8 @@ graph TD
 
     A --> Y[Observability]
     Y --> Z[Logfire Integration]
-    PD--> Z
+    PD --> Z
+    PD --> H
 ```
 
 In this updated mermaid graph:
