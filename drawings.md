@@ -6,7 +6,7 @@ graph TD
     B --> C[Polars DataFrames]
     B --> D[Pydantic Models]
     B --> E[Gradient Boosted Trees SKLearn]
-    B --> O[Outlines]
+    B --> Ot[Outlines]
     A --> P[Self-Hosted Deployments with Modal]
 
     P --> F[Autoscaling]
