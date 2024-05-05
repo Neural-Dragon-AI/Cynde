@@ -54,11 +54,10 @@ The general design pattern is to push local data to the cloud, where the embeddi
 graph LR
     A[DataFrame<br>str] --> B[cynde.functional.embed]
     A --> C[cynde.functional.generate]
-    D[DataFrame<br>float] --> C
     E[DataFrame<br>enum] --> C
     T[DataFrame<br>struct] --> C
     E --> F[cynde.functional.predict.train]
-    D --> F
+    D[DataFrame<br>float] --> F
     G[DataFrame<br>list_float] --> F
 
     H[Pydantic Model] --> C
