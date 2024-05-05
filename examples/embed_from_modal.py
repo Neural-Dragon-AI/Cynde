@@ -7,7 +7,6 @@ import polars as pl
 # from cynde.functional.generate.modal_gen import generate_column,validate_df
 from cynde.functional.embed.modal_embed import embed_column,EmbedConfig,EmbeddingResponse
 import modal
-from cynde.deploy.types import EmbeddingRequest
 import numpy as np
 
 

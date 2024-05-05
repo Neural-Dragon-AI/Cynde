@@ -23,8 +23,9 @@ def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
         request = EmbeddingRequest(inputs=text)
         requests.append(request)
     responses = []
-    for request in requests:
-        response = f.remote(request)
+    responses_generator = f.map(requests)
+    for response in responses_generator:
+        validated_response = EmbeddingResponse(request=request,response=response)
         responses.append(response)
     #vstack the responses
     responses = np.vstack(responses)
@@ -33,3 +34,11 @@ def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
     df_responses = pl.DataFrame(data={output_column_name:responses})
     df = pl.concat([df,df_responses],how="horizontal")
     return df
+
+def validate_column(df:pl.DataFrame, embed_cfg: EmbedConfig):
+    input_column_name = embed_cfg.column
+    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
+    if output_column_name not in df.columns:
+        raise ValueError(f"Column {output_column_name} not found in DataFrame")
+    return df
+
