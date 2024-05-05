@@ -2,7 +2,7 @@
 
 - Full filepath to the merged directory: `C:\Users\Tommaso\Documents\Dev\Cynde\cynde`
 
-- Created: `2024-04-11T13:09:18.085443`
+- Created: `2024-05-05T12:40:41.963491`
 
 ## init
 
@@ -581,12 +581,316 @@ class ChatCompletion(OriginalChatCompletion):
 ## init
 
 # This is the __init__.py file for the package.
+
+
+---
+
+## tei
+
+import os
+import subprocess
+from pathlib import Path
+from pydantic import BaseModel
+from typing import List
+from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
+from cynde.functional.embed.types import EmbeddingRequest
+
+MODEL_ID = "BAAI/bge-small-en-v1.5"
+BATCH_SIZE = 512
+
+LAUNCH_FLAGS = [
+    "--model-id",
+    MODEL_ID,
+    "--port",
+    "8000",
+    "--max-client-batch-size",
+    str(BATCH_SIZE),
+    "--max-batch-tokens",
+    str(BATCH_SIZE * 512),
+]
+
+
+
+def download_model():
+    subprocess.run(
+        [
+            "text-embeddings-router",
+            "download-weights",
+            MODEL_ID,
+        ],
+    )
+
+app = App("example-tei-" + MODEL_ID.split("/")[-1])
+print("App name:", app.name)
+latest_version = "ghcr.io/huggingface/text-embeddings-inference:1.2"
+tei_image = (
+    Image.from_registry(latest_version, add_python="3.12")
+    .dockerfile_commands("ENTRYPOINT []")
+    
+    .run_function(
+        download_model,
+        secrets=[Secret.from_name("huggingface-secret")],
+        timeout=3600,
+    )
+    .pip_install("httpx")
+    .pip_install("numpy")
+    .run_commands("pip install pydantic --upgrade")
+    .apt_install("git")
+    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    
+    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
+    .env({"CYNDE_DIR": "/opt/cynde"})
+    .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
+    
+    
+)
+
+GPU_CONFIG = gpu.A100(count=1,size="40GB")  
+@app.cls(
+    secrets=[Secret.from_name("huggingface-secret")],
+    gpu=GPU_CONFIG,
+    allow_concurrent_inputs=15,
+    container_idle_timeout=60 * 10,
+    timeout=60 * 60,
+    image=tei_image,
+)
+class Model:
+    @enter()
+    def start_server(self):
+        import socket
+        import time
+        from httpx import AsyncClient
+
+        self.launcher = subprocess.Popen(
+            ["text-embeddings-router"] + LAUNCH_FLAGS,
+            env={
+                **os.environ,
+                "HUGGING_FACE_HUB_TOKEN": os.environ["HF_TOKEN"],
+            },
+        )
+        self.client = AsyncClient(base_url="http://127.0.0.1:8000", timeout=60)
+
+        # Poll until webserver at 127.0.0.1:8000 accepts connections before running inputs.
+        def webserver_ready():
+            try:
+                socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
+                return True
+            except (socket.timeout, ConnectionRefusedError):
+                # Check if launcher webserving process has exited.
+                # If so, a connection can never be made.
+                retcode = self.launcher.poll()
+                if retcode is not None:
+                    raise RuntimeError(
+                        f"launcher exited unexpectedly with code {retcode}"
+                    )
+                return False
+
+        while not webserver_ready():
+            time.sleep(1.0)
+
+        print("Webserver ready!")
+
+    @exit()
+    def terminate_server(self):
+        self.launcher.terminate()
+
+    @method()
+    async def embed(self, request: EmbeddingRequest):
+        import numpy as np
+        import httpx
+
+        try:
+            response = await self.client.post("/embed", json=request.dict())
+            response.raise_for_status()  # Raise an exception for 4xx or 5xx status codes
+            embeddings = np.array(response.json())
+            return embeddings
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error occurred: {e}")
+            # Handle the error appropriately, e.g., return an error response
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            # Handle the error appropriately, e.g., return an error response
+
+
+@app.local_entrypoint()
+def main():
+    texts = ["I saw a puppy a cat and a raccoon during my bike ride in the park","I saw a  crocodile and a snake in the river","DUring camping I saw a bear and a deer"]
+    for text in texts:
+        request = EmbeddingRequest(inputs=text)
+        response = Model().embed.remote(request)
+        print(response)
+
+
+---
+
+## tgi
+
+import os
+import subprocess
+from pathlib import Path
+from pydantic import BaseModel, conint, ValidationError
+from typing import List, Optional
+from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
+from cynde.deploy.types import TGIRequest, LLamaInst3Request
+
+MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
+
+LAUNCH_FLAGS = [
+    "--model-id",
+    MODEL_ID,
+    "--port",
+    "8000",
+   
+]
+
+class Prompt(BaseModel):
+    system_prompt: str
+    user_message: str
+    output_schema: Optional[dict] = None
+    repetition_penalty: Optional[float] = None
+
+def download_model():
+    subprocess.run(
+        [
+            "text-generation-server",
+            "download-weights",
+            MODEL_ID,
+           
+        ],
+    )
+
+
+app = App(
+    "example-tgi-" + MODEL_ID.split("/")[-1]
+)  # Note: prior to April 2024, "app" was called "stub"
+print("App name:", app.name)
+latest_version = "ghcr.io/huggingface/text-generation-inference:sha-f9cf345"
+version_from_example = "ghcr.io/huggingface/text-generation-inference:1.4"
+tgi_image = (
+    Image.from_registry(latest_version)
+    .dockerfile_commands("ENTRYPOINT []")
+    .run_function(
+        download_model,
+        secrets=[Secret.from_name("huggingface-secret")],
+        timeout=3600,
+    )
+    .run_commands("pip install pydantic --upgrade")
+    .pip_install("outlines")
+    .pip_install("text-generation")
+)
+
+GPU_CONFIG = gpu.A100(count=1,size="40GB")  # 2 H100s
+
+
+@app.cls(
+    secrets=[Secret.from_name("huggingface-secret")],
+    gpu=GPU_CONFIG,
+    allow_concurrent_inputs=15,
+    container_idle_timeout=60 * 10,
+    timeout=60 * 60,
+    image=tgi_image,
+)
+class Model:
+    @enter()
+    def start_server(self):
+        import socket
+        import time
+
+        from text_generation import AsyncClient
+
+        self.launcher = subprocess.Popen(
+            ["text-generation-launcher"] + LAUNCH_FLAGS,
+            env={
+                **os.environ,
+                "HUGGING_FACE_HUB_TOKEN": os.environ["HF_TOKEN"],
+            },
+        )
+        self.client = AsyncClient("http://127.0.0.1:8000", timeout=60)
+        
+        
+        self.template = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+{user_message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
+
+        # Poll until webserver at 127.0.0.1:8000 accepts connections before running inputs.
+        def webserver_ready():
+            try:
+                socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
+                return True
+            except (socket.timeout, ConnectionRefusedError):
+                # Check if launcher webserving process has exited.
+                # If so, a connection can never be made.
+                retcode = self.launcher.poll()
+                if retcode is not None:
+                    raise RuntimeError(
+                        f"launcher exited unexpectedly with code {retcode}"
+                    )
+                return False
+
+        while not webserver_ready():
+            time.sleep(1.0)
+
+        print("Webserver ready!")
+
+    @exit()
+    def terminate_server(self):
+        self.launcher.terminate()
+
+    @method()
+    async def generate(self, request: LLamaInst3Request) :  
+        result = await self.client.generate(**request.model_dump())
+
+        return result
+
+
+---
+
+## types
+
+from pydantic import BaseModel, conint, ValidationError, Field
+from typing import List, Optional
+from text_generation.types import Grammar,Response
+
+
+class TGIRequest(BaseModel):
+    prompt: str
+    do_sample: bool = False
+    max_new_tokens: int = 1024
+    best_of: Optional[int] = None
+    repetition_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    return_full_text: bool = False
+    seed: Optional[int] = None
+    stop_sequences: Optional[List[str]] = None
+    temperature: Optional[float] = None
+    top_k: Optional[int] = None
+    top_p: Optional[float] = None
+    truncate: Optional[int] = None
+    typical_p: Optional[float] = None
+    watermark: bool = False
+    decoder_input_details: bool = False
+    top_n_tokens: Optional[int] = None
+    grammar: Optional[Grammar] = None
+
+class LLamaInst3Request(TGIRequest):
+    stop_sequences: Optional[List[str]] =Field(["<|eot_id|>"],description="The stop sequences for LLAMA3 Instruction Tuned")
+
+
+---
+
+## init
+
+# This is the __init__.py file for the package.
 from .embed import *
 from .prompt import *
 from .cv import *
 from .classify import *
 from .generate import *
 from .results import *
+
 
 from dotenv import load_dotenv
 
@@ -605,1363 +909,15 @@ def set_directories(root_dir):
     os.environ['MODAL_MOUNT'] = os.path.join(root_dir, "cynde_mount")
 
 root_dir = os.getenv('CYNDE_DIR')
+print(root_dir)
 set_directories(root_dir)
 
 ---
 
-## classify
+## init
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score,  matthews_corrcoef
-from sklearn.preprocessing import OneHotEncoder
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
-import polars as pl
-import time
-from typing import Tuple, Optional, List, Dict, Union, Any
-import os
+# This is the __init__.py file for the package.
 
-def get_hp_classifier_name(classifier_hp:dict) -> str:
-    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
-    return classifier_hp_name
-
-def get_pred_column_name(fold_name:str,input_features_name:str,classifier:str,classifier_hp_name:str) -> str:
-    return  "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-
-def get_input_name(input_feature:Dict):
-    numerical_cols = input_feature.get("numerical", []) + input_feature.get("embeddings", [])
-    categorical_cols = input_feature.get("categorical", [])
-    feature_name = "_".join(numerical_cols + categorical_cols)
-    return feature_name
-
-def fold_to_indices(fold_frame: pl.DataFrame, fold_name: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Extracts indices for training, validation, and test sets based on fold configuration.
-
-    Parameters:
-    - fold_frame: DataFrame with columns ['cv_index', '<fold_name>'] where '<fold_name>' column contains
-      identifiers for train, validation, and test sets.
-    - fold_name: The name of the column in fold_frame that contains the fold identifiers.
-
-    Returns:
-    - Tuple of numpy arrays: (train_indices, validation_indices, test_indices)
-    """
-    # Assuming the fold_frame has a column with the name in fold_name that marks rows as 'train', 'val', or 'test'
-    train_indices = fold_frame.filter(pl.col(fold_name) == "train").select("cv_index").to_numpy().flatten()
-    val_indices = fold_frame.filter(pl.col(fold_name) == "val").select("cv_index").to_numpy().flatten()
-    test_indices = fold_frame.filter(pl.col(fold_name) == "test").select("cv_index").to_numpy().flatten()
-
-    return train_indices, val_indices, test_indices
-
-
-def preprocess_dataset(df: pl.DataFrame, inputs: List[Dict[str, Union[List[str], List[List[str]]]]],target_column:str="target"):
-    feature_arrays = {}
-    encoders = {}
-
-    for inp in inputs:
-        numerical_cols = inp.get("numerical", []) + inp.get("embeddings", [])
-        categorical_cols = inp.get("categorical", [])
-        feature_name = "_".join(numerical_cols + categorical_cols)
-
-        X_final,_ = get_features(df, numerical_cols, categorical_cols,target_column = target_column)
-        
-        feature_arrays[feature_name] = X_final
-        print(f"Feature array shape for {feature_name}: {X_final.shape}")
-
-    # Assuming 'target' is the label column
-    labels = df[target_column].to_numpy()
-    return feature_arrays, labels, encoders
-
-def derive_feature_names(inputs: List[Dict[str, Union[List[str], List[List[str]]]]]) -> List[str]:
-    feature_names = []
-    for inp in inputs:
-        numerical_cols = inp.get("numerical", []) + inp.get("embeddings", [])
-        categorical_cols = inp.get("categorical", [])
-        feature_name = "_".join(numerical_cols + categorical_cols)
-        feature_names.append(feature_name)
-    return feature_names
-
-
-def get_features(df:pl.DataFrame,numerical_cols:list[str],categorical_cols:list[str],return_encoder:Optional[bool] = False,cat_encoder:Optional[OneHotEncoder]=None, target_column:str="target") -> Tuple[np.ndarray,np.ndarray]:
-        # print(f"Number of samples inside geat_feature: {df.shape[0]}")
-        y_final = df[target_column].to_numpy()
-        # print(f"Number of samples for the test set inside geat_feature: {y_final.shape[0]}")
-        #get train embeddings
-        embeddings = []
-        if len(numerical_cols)>0:
-            for col in numerical_cols:
-                embedding_np = np.array(df[col].to_list())
-                embeddings.append(embedding_np)
-            embeddings_np = np.concatenate(embeddings,axis=1)
-        
-        # Selecting only the categorical columns and the target
-        encoder = None
-        if len(categorical_cols)>0:
-            X = df.select(pl.col(categorical_cols))
-            # One-hot encoding the categorical variables
-            if cat_encoder is None:
-                encoder = OneHotEncoder()
-            X_encoded = encoder.fit_transform(X)
-            X_encoded = X_encoded.toarray()
-        #case 1 only embeddings
-        if len(categorical_cols)==0 and len(numerical_cols)>0:
-            X_final = embeddings_np
-        #case 2 only categorical
-        elif len(categorical_cols)>0 and len(numerical_cols)==0:
-            X_final = X_encoded
-        #case 3 both
-        elif len(categorical_cols)>0 and len(numerical_cols)>0:
-            X_final = np.concatenate([embeddings_np, X_encoded], axis=1)
-        else:
-            raise ValueError("No features selected")
-        if return_encoder:
-           
-            return X_final,y_final,encoder
-        return X_final,y_final
-
-def fit_clf(X_train, y_train, X_val, y_val,X_test, y_test,fold_frame:pl.DataFrame,classifier:str="RandomForest",classifier_hp:dict={},input_features_name:str="") -> Tuple[pl.DataFrame,pl.DataFrame]:
-    start_time = time.time()
-    # Initialize the Random Forest classifier
-    if classifier=="RandomForest":
-        if classifier_hp is None:
-            classifier_hp = {"random_state":777,"n_estimators":100,"max_depth":5,"n_jobs":-1}
-        clf = RandomForestClassifier(**classifier_hp)
-        
-    elif classifier == "NearestNeighbors":
-        if classifier_hp is None:
-            classifier_hp = {"n_neighbors":7}
-        clf = KNeighborsClassifier(**classifier_hp)
-    elif classifier == "MLP":
-        if classifier_hp is None:
-            classifier_hp = {"alpha":1, "max_iter":1000, "random_state":42, "hidden_layer_sizes":(1000, 500)}
-        clf = MLPClassifier(**classifier_hp)
-    #create the classifier_hp_name from the dictionary
-    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
-    fold_name = fold_frame.columns[1]
-    pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-    clf = make_pipeline(StandardScaler(), clf)
-    train_index_series = fold_frame.filter(pl.col(fold_name)=="train")["cv_index"]
-    val_index_series = fold_frame.filter(pl.col(fold_name)=="val")["cv_index"]
-    test_index_series = fold_frame.filter(pl.col(fold_name)=="test")["cv_index"]
-
-    # Train the classifier using the training set
-    start_train_time = time.time()
-    clf.fit(X_train, y_train)
-    # Predict on all the folds
-    end_train_time = time.time()
-    human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
-    start_pred_time = time.time()
-    y_pred_train = clf.predict(X_train)
-    y_pred_val = clf.predict(X_val)
-    y_pred_test = clf.predict(X_test)
-   
-
-    pred_train_df = pl.DataFrame({"cv_index":train_index_series,pred_column_name:y_pred_train})
-    pred_val_df = pl.DataFrame({"cv_index":val_index_series,pred_column_name:y_pred_val})
-    pred_test_df = pl.DataFrame({"cv_index":test_index_series,pred_column_name:y_pred_test})
-    pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
-
-    end_pred_time = time.time()
-    human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
-
-    
-    start_eval_time = time.time()
-    # Evaluate the classifier
-    accuracy_train = accuracy_score(y_train, y_pred_train)
-    accuracy_test = accuracy_score(y_test, y_pred_test)
-    accuracy_val = accuracy_score(y_val, y_pred_val)
-    mcc_train = matthews_corrcoef(y_train, y_pred_train)
-    mcc_test = matthews_corrcoef(y_test, y_pred_test)
-    mcc_val = matthews_corrcoef(y_val, y_pred_val)
-    end_eval_time = time.time()
-    human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
-    end_time = time.time()
-    human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
-    time_dict = {"train_time":human_readable_train_time,
-                 "pred_time":human_readable_pred_time,
-                 "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
-
-    results_df = pl.DataFrame({"classifier":[classifier],
-                               "classifier_hp":[classifier_hp_name],
-                               "fold_name":[fold_name],
-                               "pred_name":[pred_column_name],
-                               "input_features_name":[input_features_name],
-                               "accuracy_train":[accuracy_train],
-                                "accuracy_val":[accuracy_val],
-                                "accuracy_test":[accuracy_test],
-                                "mcc_train":[mcc_train],
-                                "mcc_val":[mcc_val],
-                                "mcc_test":[mcc_test],
-                                "train_index":[train_index_series],
-                                "val_index":[val_index_series],
-                                "test_index":[test_index_series],
-                                "time":[time_dict],
-                                }).unnest("time")
-    # print nicely formatted: accuracy, cv_scores.mean(), cv_scores.std(), 
-    # print(f"Accuracy Test: {accuracy_test}")
-    # print(f"Accuracy Val: {accuracy_val}")
-    # print(f"MCC Test: {mcc_test}")
-    # print(f"MCC Val: {mcc_val}")
-    # print(f"Total CLS time: {human_readable_total_time}")
-    return pred_df,results_df
-
-def fit_clf_from_np(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
-            classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
-    start_time = time.time()
-    clf = None
-    #create classifiers 
-    if classifier == "RandomForest":
-        clf = RandomForestClassifier(**(classifier_hp or {"random_state": 777, "n_estimators": 100, "max_depth": 5, "n_jobs": -1}))
-    elif classifier == "NearestNeighbors":
-        clf = KNeighborsClassifier(**(classifier_hp or {"n_neighbors": 7}))
-    elif classifier == "MLP":
-        clf = MLPClassifier(**(classifier_hp or {"alpha": 1, "max_iter": 1000, "random_state": 42, "hidden_layer_sizes": (1000, 500)}))
-    else:
-        raise ValueError("Classifier not supported")
-    
-    #create names 
-    classifier_hp_name = get_hp_classifier_name(classifier_hp)
-    fold_name = fold_metadata["fold_name"]
-    # pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-    pred_column_name = get_pred_column_name(fold_name,input_features_name,classifier,classifier_hp_name)
-    # Train the classifier using the training set
-    start_train_time = time.time()
-    clf = make_pipeline(StandardScaler(), clf)
-    # print("before training")
-    # print("X_train shape: ", X_train.shape)
-    # print("y_train shape: ", y_train.shape)
-    clf.fit(X_train, y_train)
-    end_train_time = time.time()
-    human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
-
-    # Predictions
-    start_pred_time = time.time()
-    # print("before clf predict")
-    y_pred_train = clf.predict(X_train)
-    y_pred_val = clf.predict(X_val)
-    y_pred_test = clf.predict(X_test)
-    end_pred_time = time.time()
-    human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
-
-    # Evaluation
-    start_eval_time = time.time()
-    # print("before evaluation")
-    accuracy_train = accuracy_score(y_train, y_pred_train)
-    accuracy_val = accuracy_score(y_val, y_pred_val)
-    accuracy_test = accuracy_score(y_test, y_pred_test)
-    mcc_train = matthews_corrcoef(y_train, y_pred_train) 
-    mcc_val = matthews_corrcoef(y_val, y_pred_val) 
-    mcc_test = matthews_corrcoef(y_test, y_pred_test) 
-    end_eval_time = time.time()
-    human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
-    end_time = time.time()
-    human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
-
-    #package predictions
-    pred_train_df = pl.DataFrame({"cv_index":fold_metadata["train_index"],pred_column_name:y_pred_train})
-    pred_val_df = pl.DataFrame({"cv_index":fold_metadata["val_index"],pred_column_name:y_pred_val})
-    pred_test_df = pl.DataFrame({"cv_index":fold_metadata["test_index"],pred_column_name:y_pred_test})
-    pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
-
-    #package results
-
-    time_dict = {"train_time":human_readable_train_time,
-                "pred_time":human_readable_pred_time,
-                "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
-
-    results_df = pl.DataFrame({"classifier":[classifier],
-                               "classifier_hp":[classifier_hp_name],
-                               "fold_name":[fold_name],
-                               "pred_name":[pred_column_name],
-                               "input_features_name":[input_features_name],
-                               "accuracy_train":[accuracy_train],
-                                "accuracy_val":[accuracy_val],
-                                "accuracy_test":[accuracy_test],
-                                "mcc_train":[mcc_train],
-                                "mcc_val":[mcc_val],
-                                "mcc_test":[mcc_test],
-                                "train_index":[fold_metadata["train_index"]],
-                                "val_index":[fold_metadata["val_index"]],
-                                "test_index":[fold_metadata["test_index"]],
-                                "time":[time_dict],
-                                }).unnest("time")
-    
-
-    return pred_df, results_df
-
-
-
-def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
-               fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.pipeline import make_pipeline
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.neural_network import MLPClassifier
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.metrics import accuracy_score,  matthews_corrcoef
-    from sklearn.preprocessing import OneHotEncoder
-    import time
-    def load_arrays_from_mount_modal(feature_name:str):
-        X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
-        y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
-        return X,y
-    def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
-            classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
-    
-        start_time = time.time()
-        clf = None
-        #create classifiers 
-        if classifier == "RandomForest":
-            clf = RandomForestClassifier(**(classifier_hp or {"random_state": 777, "n_estimators": 100, "max_depth": 5, "n_jobs": -1}))
-        elif classifier == "NearestNeighbors":
-            clf = KNeighborsClassifier(**(classifier_hp or {"n_neighbors": 7}))
-        elif classifier == "MLP":
-            clf = MLPClassifier(**(classifier_hp or {"alpha": 1, "max_iter": 1000, "random_state": 42, "hidden_layer_sizes": (1000, 500)}))
-        else:
-            raise ValueError("Classifier not supported")
-        
-        #create names 
-        classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
-        fold_name = fold_metadata["fold_name"]
-        pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-
-        # Train the classifier using the training set
-        start_train_time = time.time()
-        clf = make_pipeline(StandardScaler(), clf)
-        # print("before training")
-        # print("X_train shape: ", X_train.shape)
-        # print("y_train shape: ", y_train.shape)
-        clf.fit(X_train, y_train)
-        end_train_time = time.time()
-        human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
-
-        # Predictions
-        start_pred_time = time.time()
-        # print("before clf predict")
-        y_pred_train = clf.predict(X_train)
-        y_pred_val = clf.predict(X_val)
-        y_pred_test = clf.predict(X_test)
-        end_pred_time = time.time()
-        human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
-
-        # Evaluation
-        start_eval_time = time.time()
-        # print("before evaluation")
-        accuracy_train = accuracy_score(y_train, y_pred_train)
-        accuracy_val = accuracy_score(y_val, y_pred_val)
-        accuracy_test = accuracy_score(y_test, y_pred_test)
-        mcc_train = matthews_corrcoef(y_train, y_pred_train) 
-        mcc_val = matthews_corrcoef(y_val, y_pred_val) 
-        mcc_test = matthews_corrcoef(y_test, y_pred_test) 
-        end_eval_time = time.time()
-        human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
-        end_time = time.time()
-        human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
-
-        #package predictions
-        pred_train_df = pl.DataFrame({"cv_index":fold_metadata["train_index"],pred_column_name:y_pred_train})
-        pred_val_df = pl.DataFrame({"cv_index":fold_metadata["val_index"],pred_column_name:y_pred_val})
-        pred_test_df = pl.DataFrame({"cv_index":fold_metadata["test_index"],pred_column_name:y_pred_test})
-        pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
-
-        #package results
-
-        time_dict = {"train_time":human_readable_train_time,
-                    "pred_time":human_readable_pred_time,
-                    "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
-
-        results_df = pl.DataFrame({"classifier":[classifier],
-                                "classifier_hp":[classifier_hp_name],
-                                "fold_name":[fold_name],
-                                "pred_name":[pred_column_name],
-                                "input_features_name":[input_features_name],
-                                "accuracy_train":[accuracy_train],
-                                    "accuracy_val":[accuracy_val],
-                                    "accuracy_test":[accuracy_test],
-                                    "mcc_train":[mcc_train],
-                                    "mcc_val":[mcc_val],
-                                    "mcc_test":[mcc_test],
-                                    "train_index":[fold_metadata["train_index"]],
-                                    "val_index":[fold_metadata["val_index"]],
-                                    "test_index":[fold_metadata["test_index"]],
-                                    "time":[time_dict],
-                                    }).unnest("time")
-        
-
-        return pred_df, results_df
-    
-
-def load_arrays_from_mount_modal(feature_name:str):
-        X = np.load(os.path.join("/root/cynde_mount",feature_name+".npy"))
-        y = np.load(os.path.join("/root/cynde_mount","labels.npy"))
-        return X,y
-
-
-def fit_clf_from_np_modal(X_train, y_train, X_val, y_val, X_test, y_test,fold_metadata:dict,
-        classifier: str = "RandomForest", classifier_hp: dict = {}, input_features_name: str = "") -> Tuple[pl.DataFrame, pl.DataFrame]:
-
-    start_time = time.time()
-    clf = None
-    #create classifiers 
-    if classifier == "RandomForest":
-        clf = RandomForestClassifier(**(classifier_hp or {"random_state": 777, "n_estimators": 100, "max_depth": 5, "n_jobs": -1}))
-    elif classifier == "NearestNeighbors":
-        clf = KNeighborsClassifier(**(classifier_hp or {"n_neighbors": 7}))
-    elif classifier == "MLP":
-        clf = MLPClassifier(**(classifier_hp or {"alpha": 1, "max_iter": 1000, "random_state": 42, "hidden_layer_sizes": (1000, 500)}))
-    else:
-        raise ValueError("Classifier not supported")
-    
-    #create names 
-    classifier_hp_name = "_".join([f"{key}_{value}" for key,value in classifier_hp.items()])
-    classifier_hp_name = get_hp_classifier_name(classifier_hp)
-    fold_name = fold_metadata["fold_name"]
-    pred_column_name = "{}_{}_{}_{}_y_pred".format(fold_name,input_features_name,classifier,classifier_hp_name)
-
-    # Train the classifier using the training set
-    start_train_time = time.time()
-    clf = make_pipeline(StandardScaler(), clf)
-    # print("before training")
-    # print("X_train shape: ", X_train.shape)
-    # print("y_train shape: ", y_train.shape)
-    clf.fit(X_train, y_train)
-    end_train_time = time.time()
-    human_readable_train_time = time.strftime("%H:%M:%S", time.gmtime(end_train_time-start_train_time))
-
-    # Predictions
-    start_pred_time = time.time()
-    # print("before clf predict")
-    y_pred_train = clf.predict(X_train)
-    print("prediction type: ", type(y_pred_train))
-    #check val length before prediction, it could be empty
-    if len(X_val)>0:
-        y_pred_val = clf.predict(X_val)
-    else:
-        y_pred_val = []
-    y_pred_test = clf.predict(X_test)
-    end_pred_time = time.time()
-    human_readable_pred_time = time.strftime("%H:%M:%S", time.gmtime(end_pred_time-start_pred_time))
-
-    # Evaluation
-    start_eval_time = time.time()
-    # print("before evaluation")
-    accuracy_train = accuracy_score(y_train, y_pred_train)
-    accuracy_val = accuracy_score(y_val, y_pred_val)
-    accuracy_test = accuracy_score(y_test, y_pred_test)
-    mcc_train = matthews_corrcoef(y_train, y_pred_train) 
-    mcc_val = matthews_corrcoef(y_val, y_pred_val) 
-    mcc_test = matthews_corrcoef(y_test, y_pred_test) 
-    end_eval_time = time.time()
-    human_readable_eval_time = time.strftime("%H:%M:%S", time.gmtime(end_eval_time-start_eval_time))
-    end_time = time.time()
-    human_readable_total_time = time.strftime("%H:%M:%S", time.gmtime(end_time-start_time))
-
-    #package predictions
-    pred_train_df = pl.DataFrame({"cv_index":fold_metadata["train_index"],pred_column_name:y_pred_train})
-    pred_val_df = pl.DataFrame({"cv_index":fold_metadata["val_index"],pred_column_name:y_pred_val})
-    pred_test_df = pl.DataFrame({"cv_index":fold_metadata["test_index"],pred_column_name:y_pred_test})
-    pred_df = pred_train_df.vstack(pred_val_df).vstack(pred_test_df)
-
-    #package results
-
-    time_dict = {"train_time":human_readable_train_time,
-                "pred_time":human_readable_pred_time,
-                "eval_time":human_readable_eval_time,"total_cls_time":human_readable_total_time}
-
-    results_df = pl.DataFrame({"classifier":[classifier],
-                            "classifier_hp":[classifier_hp_name],
-                            "fold_name":[fold_name],
-                            "pred_name":[pred_column_name],
-                            "input_features_name":[input_features_name],
-                            "accuracy_train":[accuracy_train],
-                                "accuracy_val":[accuracy_val],
-                                "accuracy_test":[accuracy_test],
-                                "mcc_train":[mcc_train],
-                                "mcc_val":[mcc_val],
-                                "mcc_test":[mcc_test],
-                                "train_index":[fold_metadata["train_index"]],
-                                "val_index":[fold_metadata["val_index"]],
-                                "test_index":[fold_metadata["test_index"]],
-                                "time":[time_dict],
-                                }).unnest("time")
-    
-
-    return pred_df, results_df
-
----
-
-## cv
-
-import polars as pl
-import numpy as np
-from typing import List, Tuple, Union, Dict, Any, Generator, Optional
-import time
-from cynde.functional.classify import get_features, fit_clf,fit_clf_from_np, fold_to_indices, preprocess_dataset
-import os
-import math
-
-def shuffle_frame(df:pl.DataFrame):
-    return df.sample(fraction=1,shuffle=True)
-
-def slice_frame(df:pl.DataFrame, num_slices:int, shuffle:bool = False, explode:bool = False):
-    max_index = df.shape[0]
-    if shuffle:
-        df = shuffle_frame(df)
-    indexes = [0] + [max_index//num_slices*i for i in range(1,num_slices)] + [max_index]
-    if explode:
-        return [df.slice(indexes[i],indexes[i+1]-indexes[i]).explode("cv_index").select(pl.col("cv_index")) for i in range(len(indexes)-1)]
-    else:
-        return [df.slice(indexes[i],indexes[i+1]-indexes[i]).select(pl.col("cv_index")) for i in range(len(indexes)-1)]
-
-def hacky_list_relative_slice(list: List[int], k: int):
-    slices = {}
-    slice_size = len(list) // k
-    for i in range(k):
-        if i < k - 1:
-            slices["fold_{}".format(i)] = list[i*slice_size:(i+1)*slice_size]
-        else:
-            # For the last slice, include the remainder
-            slices["fold_{}".format(i)] = list[i*slice_size:]
-    return slices
-def check_add_cv_index(df:pl.DataFrame):
-    if "cv_index" not in df.columns:
-        df = df.with_row_index(name="cv_index")
-    return df
-def vanilla_kfold(df:pl.DataFrame,group,k:int,shuffle:bool=True,pre_name:str="",target_names:Tuple[str,str] = ("train","test")):
-    #we will use the row index to split the data
-    #first we will shuffle the data
-    df = check_add_cv_index(df)
-    if shuffle:
-        df = shuffle_frame(df)
-    #then we will split the data into k slices
-    df_slices = slice_frame(df,k,shuffle=False,explode=False)
-    index_df = df.select(pl.col("cv_index"))
-    for i in range(k):
-        test_set = df_slices[i]
-        train_set = [df_slices[j] for j in range(k) if j!=i]
-        train_set = pl.concat(train_set)
-
-        test_df = test_set.with_columns([pl.lit(target_names[1]).alias(pre_name+"fold_{}".format(i))])
-        train_df = train_set.with_columns([pl.lit(target_names[0]).alias(pre_name+"fold_{}".format(i))])
-        fold_df = train_df.vstack(test_df)
-        index_df = index_df.join(fold_df, on="cv_index", how="left")
-    return index_df
-
-def purged_kfold(df:pl.DataFrame,group:List[str],k:int,shuffle:bool=True,pre_name:str="",target_names:Tuple[str,str] = ("train","test")):
-    #group is a list of columns that will be used to group the data
-    #k is the number of splits
-    #we will use the group to split the data into k groups and then we will use the group to make sure that the same group is not in the train and test set
-    #we will use the row index to split the data
-    #first we will shuffle the data
-    df = check_add_cv_index(df)
-    gdf = df.group_by(group).agg(pl.col("cv_index"))
-    #then we will split the data into k slices we need to explode the index since we are working on groups
-    gdf_slices = slice_frame(gdf,k,shuffle=shuffle,explode=True)
-    #then we will iterate over the slices and use the slice as the test set and the rest as the train set
-    index_df = df.select(pl.col("cv_index"))
-    for i in range(k):
-        test_set = gdf_slices[i]
-        train_set = [gdf_slices[j] for j in range(k) if j!=i]
-        train_set = pl.concat(train_set)
-
-        test_df = test_set.with_columns([pl.lit(target_names[1]).alias(pre_name+"fold_{}".format(i))])
-        train_df = train_set.with_columns([pl.lit(target_names[0]).alias(pre_name+"fold_{}".format(i))])
-        fold_df = train_df.vstack(test_df)
-        index_df = index_df.join(fold_df, on="cv_index", how="left")
-    return index_df
-
-def stratified_kfold(df:pl.DataFrame,group:List[str],k:int,shuffle:bool=True,pre_name:str="",target_names:Tuple[str,str] = ("train","test")):
-    df = check_add_cv_index(df)
-    sdf = df.group_by(group).agg(pl.col("cv_index"))
-    if shuffle:
-        sdf = sdf.with_columns(pl.col("cv_index").list.sample(fraction=1,shuffle=True))
-    sliced = sdf.select(pl.col("cv_index").map_elements(lambda s: hacky_list_relative_slice(s,k)).alias("hacky_cv_index")).unnest("hacky_cv_index")
-
-    index_df = df.select(pl.col("cv_index"))
-
-    for i in range(k):
-            test_set = sliced.select(pl.col("fold_{}".format(i)).alias("cv_index")).explode("cv_index")
-            train_set = sliced.select(pl.concat_list([sliced["fold_{}".format(j)] for j in range(k) if j!=i]).alias("cv_index")).explode("cv_index")
-            test_df = test_set.with_columns([pl.lit(target_names[1]).alias(pre_name+"fold_{}".format(i))])
-            train_df = train_set.with_columns([pl.lit(target_names[0]).alias(pre_name+"fold_{}".format(i))])
-            index_df = index_df.join(train_df.vstack(test_df), on="cv_index", how="left")
-    return index_df
-
-def divide_df_by_target(df: pl.DataFrame,target:str) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    if target not in df.columns:
-        raise ValueError(f"Target {target} not in columns")
-    print(f"Total rows: {df.shape[0]}")
-    target_rows = df.filter(pl.col(target)==True)
-    other = df.filter(pl.col(target)==False)
-    print(f"Target {target} rows: {target_rows.shape[0]}")
-    print(f"Other rows: {other.shape[0]}")
-    return target_rows, other
-
-def resample_dataset(df:pl.DataFrame,df_target: pl.DataFrame, df_other:pl.DataFrame, size: int = math.inf) -> pl.DataFrame:
-    size_target,size_other = [df_target.shape[0], df_other.shape[0]]
-    min_size = min(size_target, size_other,size)
-    df_index = sample_dataset_index(df_target, df_other, min_size)
-    return df.filter(pl.col("cv_index").is_in(df_index["cv_index"]))
-
-def sample_dataset_index(df_target: pl.DataFrame, df_other:pl.DataFrame, size: int = math.inf) -> pl.DataFrame:
-    size_target,size_other = [df_target.shape[0], df_other.shape[0]]
-    min_size = min(size_target, size_other,size)
-    return df_target.select(pl.col("cv_index")).sample(min_size).vstack(df_other.select(pl.col("cv_index")).sample(min_size))
-
-def vanilla_resample_kfold(df:pl.DataFrame,group:List[str],k:int,shuffle:bool=True,pre_name:str="",target_names:Tuple[str,str] = ("train","test"), size:int = math.inf):
-    target = group[0]
-    df =check_add_cv_index(df)
-    df_only_target = df.select(pl.col(["cv_index",target]))
-    df_target, df_other = divide_df_by_target(df_only_target, target)
-    df_resampled = resample_dataset(df_only_target, df_target, df_other, size)
-    if pre_name == "":
-        pre_name = f"resampled_by_{target}_"
-    index_df = stratified_kfold(df_resampled, group,k,shuffle=shuffle,pre_name=pre_name,target_names=target_names)
-    return index_df
-        
-
-def get_cv_function(cv_type:str):
-    print(f"cv_type: {cv_type}")
-    if cv_type == "purged":
-        return purged_kfold
-    elif cv_type == "stratified":
-        return stratified_kfold
-    elif cv_type == "vanilla":
-        return vanilla_kfold
-    elif cv_type == "resample":
-        return vanilla_resample_kfold
-    else:
-        raise ValueError("cv_type can only be purged, stratified or vanilla")
-
-def validate_cv_type(cv_type: Tuple[str,str]):
-    for cv_subtype in cv_type:
-        if cv_subtype not in ["purged","stratified","vanilla","resample"]:
-            raise ValueError("cv_type can only be purged, stratified or vanilla")
-    return cv_type[0],cv_type[1]
-
-def derive_cv_columns(group_outer:List[str],group_inner:List[str]):
-    cv_columns = ["cv_index"]
-    if group_outer is not None:
-        name_group_outer = "_".join(group_outer)
-        cv_columns += group_outer
-    else:
-        name_group_outer = ""
-    if group_inner is not None:
-        name_group_inner = "_".join(group_inner)
-        cv_columns += group_inner
-    else:
-        name_group_inner = ""
-    cv_columns = list(set(cv_columns))
-    return cv_columns,name_group_outer,name_group_inner
-
-
-def nested_cv(df:pl.DataFrame, cv_type: Tuple[str,str], group_outer:List[str],k_outer:int,group_inner:List[str],k_inner:int,r_outer:int =1, r_inner:int =1,return_joined : bool = False):
-    if "precomputed" in cv_type:
-        print("detected precomputed cv")
-        df = check_add_cv_index(df)
-        if return_joined:        
-            return df
-        else:
-            folds_columns = [col for col in  df.columns if "fold" in col]
-            return df.select(pl.col(["cv_index"]+folds_columns))
-
-    
-    outer_type,inner_type = validate_cv_type(cv_type)
-        
-    df = check_add_cv_index(df)
-    
-    cv_columns,name_group_outer,name_group_inner = derive_cv_columns(group_outer,group_inner)
-
-    cv_df = df.select(pl.col(cv_columns))
-    
-    outer_cv_function = get_cv_function(outer_type)
-    inner_cv_function = get_cv_function(inner_type)
-
-    for r_out in range(r_outer):
-
-        outer_pre_name = "outer_{}_{}_replica_{}_".format(outer_type,name_group_outer,r_out)
-        outer_folds = outer_cv_function(df,group_outer,k_outer,shuffle=True,pre_name=outer_pre_name,target_names=("dev","test"))
-        cv_df = cv_df.join(outer_folds, on="cv_index", how="left")
-
-        for k_out in range(k_outer):
-            for r_in in range(r_inner):
-
-                inner_pre_name = "inner_{}_{}_replica_{}_".format(inner_type,name_group_inner,r_in)
-                target_column_name = "{}fold_{}".format(outer_pre_name,k_out)
-                dev_df = cv_df.filter(pl.col(target_column_name)=="dev")
-                test_df = cv_df.select(pl.col(["cv_index",target_column_name])).filter(pl.col(target_column_name)=="test")
-                complete_pre_name = "{}fold_{}_{}".format(outer_pre_name,k_out,inner_pre_name)
-                inner_folds = inner_cv_function(dev_df,group_inner,k_inner,shuffle=True,pre_name=complete_pre_name,target_names=("train","val"))
-                col_df_list= [test_df.select(pl.col("cv_index"))]
-                for col in inner_folds.columns:
-                    if col != "cv_index":
-                        col_df = test_df.select(pl.col(target_column_name).alias(col))
-                        col_df_list.append(col_df)
-                test_rows_df =pl.concat(col_df_list,how="horizontal")
-                inner_folds = inner_folds.vstack(test_rows_df)
-        
-                
-                cv_df = cv_df.join(inner_folds, on="cv_index", how="left")
-    if return_joined:
-        return df.join(cv_df, on=cv_columns, how="left")
-    else:
-        return cv_df.sort("cv_index")
-    
-def get_fold_name_cv(group_outer:List[str],
-                    cv_type: Tuple[str,str],
-                    r_outer:int,
-                    k_outer:int,
-                    group_inner:List[str],
-                    r_inner:int,
-                    k_inner:int):
-    if "precomputed" in cv_type:
-        return "fold_{}".format(k_inner+1)
-    return "outer_{}_{}_replica_{}_fold_{}_inner_{}_{}_replica_{}_fold_{}".format(cv_type[0],
-                                                                                  "_".join(group_outer),   
-                                                                                   r_outer,
-                                                                                   k_outer,
-                                                                                   cv_type[1],
-                                                                                   "_".join(group_inner),
-                                                                                   r_inner,
-                                                                                   k_inner)
-
-RESULTS_SCHEMA = {"classifier":pl.Utf8,
-                  "classifier_hp":pl.Utf8,
-                "fold_name":pl.Utf8,
-                "pred_name":pl.Utf8,
-                "input_features_name":pl.Utf8,
-                "accuracy_train":pl.Float64,
-                "accuracy_val":pl.Float64,
-                "accuracy_test":pl.Float64,
-                "mcc_train":pl.Float64,
-                "mcc_val":pl.Float64,
-                "mcc_test":pl.Float64,
-                "train_index":pl.List(pl.UInt32),
-                "val_index":pl.List(pl.UInt32),
-                "test_index":pl.List(pl.UInt32),
-                "train_time":pl.Utf8,
-                "pred_time":pl.Utf8,
-                "eval_time":pl.Utf8,
-                "total_cls_time":pl.Utf8,
-                "k_outer":pl.Int64,
-                "k_inner":pl.Int64,
-                "r_outer":pl.Int64,
-                "r_inner":pl.Int64}
-
-def fold_to_dfs(df:pl.DataFrame,fold_name:str) -> Tuple[pl.DataFrame,pl.DataFrame,pl.DataFrame]:
-    df_train = df.filter(pl.col(fold_name)=="train")
-    df_val = df.filter(pl.col(fold_name)=="val")
-    df_test = df.filter(pl.col(fold_name)=="test")
-    return df_train,df_val,df_test
-
-def train_nested_cv(df:pl.DataFrame,
-                    cv_type: Tuple[str,str],
-                    inputs:List[Dict[str,Union[List[str],List[List[str]]]]],
-                    models:Dict[str,List[Dict[str,Any]]],
-                    group_outer:List[str],
-                    k_outer:int,
-                    group_inner:List[str],
-                    k_inner:int,
-                    r_outer:int =1,
-                    r_inner:int =1,
-                    save_name:str="nested_cv_out",
-                    base_path:Optional[str]=None) -> Tuple[pl.DataFrame,pl.DataFrame]:
-    
-    df = check_add_cv_index(df)
-    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
-    print(pred_df.columns)
-    cv_df = df.join(pred_df, on="cv_index", how="left")
-    results_df = pl.DataFrame(schema = RESULTS_SCHEMA)
-
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer,cv_type,r_o,k_o,group_inner,r_i,k_i)
-                    fold_frame = cv_df.select(pl.col("cv_index"),pl.col(fold_name))
-                    df_train,df_val,df_test = fold_to_dfs(cv_df,fold_name)
-                    for inp in inputs:
-                        #numerical features are inp["numerical"] and inp["embeddings"] are the embeddings
-                        numerical = inp.get("numerical",[])+inp.get("embeddings",[])
-                        categorical = inp.get("categorical",[])
-                        feature_name = "_".join(numerical+categorical)
-                        x_tr, y_tr,cat_encoder = get_features(df_train,numerical,categorical,return_encoder=True)
-                        x_val, y_val = get_features(df_val,numerical,categorical,cat_encoder=cat_encoder)
-                        x_te, y_te = get_features(df_test,numerical,categorical,cat_encoder=cat_encoder)
-
-                        for model,hp_list in models.items():
-                            for hp in hp_list:
-                                pred_df_col,results_df_row = fit_clf(x_tr, y_tr, x_val, y_val,x_te, y_te,
-                                                                     classifier=model,
-                                                                     classifier_hp= hp,
-                                                                     fold_frame=fold_frame,
-                                                                     input_features_name=feature_name)
-                                
-                                fold_meta_data_df = pl.DataFrame({"k_outer":[k_o],"k_inner":[k_i],"r_outer":[r_o],"r_inner":[r_i]})
-                                results_df_row = pl.concat([results_df_row,fold_meta_data_df],how="horizontal")                   
-                                results_df = results_df.vstack(results_df_row)
-
-                                pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
-    time_stamp_str_url_compatible = time.strftime("%Y-%m-%d_%H-%M-%S")
-    #results are frame num_models and pred_df is a frame num_sample 
-    #joined df is 
-    save_name_res = "results_"+time_stamp_str_url_compatible+"_"+save_name+".parquet"
-    save_name_pred = "predictions_"+time_stamp_str_url_compatible+"_"+save_name+".parquet"
-    save_name_joined_df = "joined_"+time_stamp_str_url_compatible+"_"+save_name+".parquet"
-    #use os to merge filenames with data_processed folder
-    #goes up one directory and then into data_processed
-    #retrive the path of teh cynde package
-    if base_path is not None:
-        up_one = os.path.join(base_path,"data_processed")
-    else:
-        up_one = os.path.join(os.getcwd(),"data_processed")
-    save_name_res = os.path.join(up_one,save_name_res)
-    save_name_pred = os.path.join(up_one,save_name_pred)
-    save_name_joined_df = os.path.join(up_one,save_name_joined_df)
-    print(f"Saving results to {save_name_res}")
-    results_df.write_parquet(save_name_res)
-    pred_df.write_parquet(save_name_pred)
-    df.join(pred_df, on="cv_index", how="left").write_parquet(save_name_joined_df)
-    return results_df,pred_df
-
-
-
-def generate_folds(cv_df: pl.DataFrame, cv_type: Tuple[str, str], inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                   group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int, r_outer: int, r_inner: int) -> Generator:
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
-                    fold_frame = cv_df.select(pl.col("cv_index"), pl.col(fold_name))
-                    df_train, df_val, df_test = fold_to_dfs(cv_df, fold_name)
-                    for inp in inputs:
-                        numerical = inp.get("numerical", []) + inp.get("embeddings", [])
-                        categorical = inp.get("categorical", [])
-                        feature_name = "_".join(numerical + categorical)
-                        x_tr, y_tr, cat_encoder = get_features(df_train, numerical, categorical, return_encoder=True)
-                        x_val, y_val = get_features(df_val, numerical, categorical, cat_encoder=cat_encoder)
-                        x_te, y_te = get_features(df_test, numerical, categorical, cat_encoder=cat_encoder)
-
-                        fold_meta = {
-                            "r_outer": r_o,
-                            "k_outer": k_o,
-                            "r_inner": r_i,
-                            "k_inner": k_i,
-                            "embeddings": inp.get("embeddings", [])
-                        }
-                        
-                        yield fold_name, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
-
-
-def save_results(df:pl.DataFrame,results_df: pl.DataFrame, pred_df: pl.DataFrame, save_name: str, base_path:Optional[str]=None):
-    time_stamp_str_url_compatible = time.strftime("%Y-%m-%d_%H-%M-%S")
-    save_name_res = f"results_{time_stamp_str_url_compatible}_{save_name}.parquet"
-    save_name_pred = f"predictions_{time_stamp_str_url_compatible}_{save_name}.parquet"
-    save_name_joined_df = f"joined_{time_stamp_str_url_compatible}_{save_name}.parquet"
-    if base_path is not None:
-        up_one = os.path.join(base_path, "data_processed")
- 
-    else:
-        up_one = os.path.join(os.getcwd(), "data_processed")
-    if not os.path.exists(up_one):
-        os.mkdir(up_one)
-    save_name_res = os.path.join(up_one, save_name_res)
-    save_name_pred = os.path.join(up_one, save_name_pred)
-    save_name_joined_df = os.path.join(up_one, save_name_joined_df)
-    print(f"Saving results to {save_name_res}")
-    results_df.write_parquet(save_name_res)
-    pred_df.write_parquet(save_name_pred)
-    df.join(pred_df, on="cv_index", how="left").write_parquet(save_name_joined_df)
-
-def fit_models(models: Dict[str, List[Dict[str, Any]]], fold_frame: pl.DataFrame, feature_name: str,
-               x_tr: np.ndarray, y_tr: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, x_te: np.ndarray, y_te: np.ndarray,
-               fold_meta: Dict[str, Any]) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-    pred_list = []
-    results_list = []
-    for model, hp_list in models.items():
-        for hp in hp_list:
-            pred_df_col, results_df_row = fit_clf(x_tr, y_tr, x_val, y_val, x_te, y_te,
-                                                  classifier=model,
-                                                  classifier_hp=hp,
-                                                  fold_frame=fold_frame,
-                                                  input_features_name=feature_name)
-            pred_list.append(pred_df_col)
-            
-            fold_meta_data_df = pl.DataFrame({
-                "k_outer": [fold_meta["k_outer"]],
-                "k_inner": [fold_meta["k_inner"]],
-                "r_outer": [fold_meta["r_outer"]],
-                "r_inner": [fold_meta["r_inner"]]
-            })
-            
-            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
-            results_list.append(results_df_row)
-    return pred_list, results_list
-
-
-
-
-
-
-
-def train_nested_cv_simple(df: pl.DataFrame,
-                           cv_type: Tuple[str, str],
-                           inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                           models: Dict[str, List[Dict[str, Any]]],
-                           group_outer: List[str],
-                           k_outer: int,
-                           group_inner: List[str],
-                           k_inner: int,
-                           r_outer: int = 1,
-                           r_inner: int = 1,
-                           save_name: str = "nested_cv_out",
-                           base_path: Optional[str] = None,
-                           skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    start_time = time.time()
-    df = check_add_cv_index(df)
-    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
-    
-    cv_df = df.join(pred_df, on="cv_index", how="left")
-    results_df = pl.DataFrame(schema=RESULTS_SCHEMA)
-    cv_creation_time = time.time()
-    print(f"cv_creation_time: {cv_creation_time - start_time}")
-    all_pred_list = []
-    all_results_list = []
-
-    for fold_info in generate_folds(cv_df, cv_type, inputs, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner):
-        fold_name, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta = fold_info
-        if not skip_class:
-            pred_list, results_list = fit_models(models, fold_frame, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta)
-            all_pred_list.extend(pred_list)
-            all_results_list.extend(results_list)
-    fit_time = time.time()
-    print(f"fit_time: {fit_time - cv_creation_time}")
-    print(f"average time per fold: {(fit_time - cv_creation_time) / (k_outer * k_inner * r_outer * r_inner)}")
-
-    # Aggregate results
-    for results_df_row in all_results_list:
-        results_df = results_df.vstack(results_df_row)
-
-    for pred_df_col in all_pred_list:
-        pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
-    aggregation_time = time.time()
-    print(f"aggregation_time: {aggregation_time - fit_time}")
-    save_results(df, results_df, pred_df, save_name, base_path=base_path)
-    save_time = time.time()
-    print(f"save_time: {save_time - aggregation_time}")
-    print(f"total_time: {save_time - start_time}")
-    print(f"Total average time per fold: {(save_time - start_time) / (k_outer * k_inner * r_outer * r_inner)}")
-    return results_df, pred_df
-
-def generate_folds_from_np(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
-                    labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
-                    r_outer: int, r_inner: int) -> Generator:
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
-                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
-
-                    # Iterate directly over feature_arrays, as inputs are now preprocessed
-                    for feature_name, X in feature_arrays.items():
-                        y = labels  # Labels are common for all feature sets
-                        # print(f"Feature name: {feature_name}")
-                        # print(f"Shapes: {X.shape}, {y.shape}")
-                        # print(f"Indices: {indices_train.shape}, {indices_val.shape}, {indices_test.shape}")
-                        # Use indices to select the appropriate subsets for the current fold
-                        x_tr, y_tr = X[indices_train,:], y[indices_train]
-                        x_val, y_val = X[indices_val,:], y[indices_val]
-                        x_te, y_te = X[indices_test,:], y[indices_test]
-
-                        fold_meta = {
-                            "r_outer": r_o,
-                            "k_outer": k_o,
-                            "r_inner": r_i,
-                            "k_inner": k_i,
-                            "fold_name": fold_name,
-                            "train_index": pl.Series(indices_train),
-                            "val_index": pl.Series(indices_val),
-                            "test_index": pl.Series(indices_test),
-                        }
-
-                        yield fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta
-
-# def generate_folds_from_np_modal_compatible(cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_arrays: Dict[str, np.ndarray],
-#                            labels: np.ndarray, group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
-#                            r_outer: int, r_inner: int) -> Generator:
-#     for r_o in range(r_outer):
-#         for k_o in range(k_outer):
-#             for r_i in range(r_inner):
-#                 for k_i in range(k_inner):
-#                     fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
-#                     indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
-
-#                     for feature_name, X in feature_arrays.items():
-#                         y = labels
-#                         x_tr, y_tr = X[indices_train,:], y[indices_train]
-#                         x_val, y_val = X[indices_val,:], y[indices_val]
-#                         x_te, y_te = X[indices_test,:], y[indices_test]
-
-#                         fold_meta = {
-#                             "r_outer": r_o,
-#                             "k_outer": k_o,
-#                             "r_inner": r_i,
-#                             "k_inner": k_i,
-#                             "fold_name": fold_name,
-#                             "train_index": pl.Series(indices_train),
-#                             "val_index": pl.Series(indices_val),
-#                             "test_index": pl.Series(indices_test),
-#                         }
-
-#                         yield (x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta, feature_name)
-
-
-def fit_models_from_np(models: Dict[str, List[Dict[str, Any]]], feature_name: str,
-               x_tr: np.ndarray, y_tr: np.ndarray, x_val: np.ndarray, y_val: np.ndarray, x_te: np.ndarray, y_te: np.ndarray,
-               fold_meta: Dict[str, Any]) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-    pred_list = []
-    results_list = []
-    for model, hp_list in models.items():
-        for hp in hp_list:
-            # print("before fit_clfrom_np")
-            # print(f"Shapes: {x_tr.shape}, {y_tr.shape}, {x_val.shape}, {y_val.shape}, {x_te.shape}, {y_te.shape}")
-            pred_df_col, results_df_row = fit_clf_from_np(x_tr, y_tr, x_val, y_val, x_te, y_te,
-                                                        fold_metadata=fold_meta,
-                                                        classifier=model,
-                                                        classifier_hp=hp,
-                                                        input_features_name=feature_name)
-            pred_list.append(pred_df_col)
-            fold_meta_data_df = pl.DataFrame({
-                "k_outer": [fold_meta["k_outer"]],
-                "k_inner": [fold_meta["k_inner"]],
-                "r_outer": [fold_meta["r_outer"]],
-                "r_inner": [fold_meta["r_inner"]]
-            })
-            # print("schema", fold_meta_data_df.schema)
-            # print(f"shape of row before concat: {results_df_row.shape}")
-            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
-            # print(f"shape of row after concat: {results_df_row.shape}")
-            
-            results_list.append(results_df_row)
-    return pred_list, results_list
-
-def train_nested_cv_from_np(df: pl.DataFrame,
-                           cv_type: Tuple[str, str],
-                           inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                           models: Dict[str, List[Dict[str, Any]]],
-                           group_outer: List[str],
-                           k_outer: int,
-                           group_inner: List[str],
-                           k_inner: int,
-                           r_outer: int = 1,
-                           r_inner: int = 1,
-                           save_name: str = "nested_cv_out",
-                           base_path: Optional[str] = None,
-                           skip_class: bool = False) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    start_time = time.time()
-    df = check_add_cv_index(df)
-    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
-    cv_df = df.join(pred_df, on="cv_index", how="left")
-    results_df = pl.DataFrame(schema=RESULTS_SCHEMA)
-    print("results schema: ", results_df.schema)
-    print(f"results shape: {results_df.shape}")
-
-    # Preprocess the dataset
-    preprocess_start_time = time.time()
-    feature_arrays, labels, _ = preprocess_dataset(df, inputs)
-    preprocess_end_time = time.time()
-    print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
-
-    all_pred_list = []
-    all_results_list = []
-
-    # Generate folds and fit models
-    folds_generation_start_time = time.time()
-    for fold_info in generate_folds_from_np(cv_df, cv_type, feature_arrays, labels, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner):
-        fold_name, feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta = fold_info
-        if not skip_class:
-            
-            pred_list, results_list = fit_models_from_np(models,
-                                                        feature_name, x_tr, y_tr, x_val, y_val, x_te, y_te, fold_meta)
-            all_pred_list.extend(pred_list)
-            all_results_list.extend(results_list)
-    folds_generation_end_time = time.time()
-    print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
-    print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
-
-    # Aggregate and save results
-    aggregation_start_time = time.time()
-    for results_df_row in all_results_list:
-        results_df = results_df.vstack(results_df_row)
-
-    for pred_df_col in all_pred_list:
-        pred_df = pred_df.join(pred_df_col, on="cv_index", how="left")
-    aggregation_end_time = time.time()
-    print(f"Aggregation of results completed in {aggregation_end_time - aggregation_start_time} seconds")
-
-    save_results_start_time = time.time()
-    save_results(df, results_df, pred_df, save_name, base_path=base_path)
-    save_results_end_time = time.time()
-    print(f"Saving results completed in {save_results_end_time - save_results_start_time} seconds")
-
-    total_end_time = time.time()
-    print(f"Total training and processing time: {total_end_time - start_time} seconds")
-    print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner)} seconds")
-
-    return results_df, pred_df
-
-
-def generate_folds_from_np_modal_compatible(models: Dict[str, List[Dict[str, Any]]],cv_df: pl.DataFrame, cv_type: Tuple[str, str], feature_names: List[str],
-                           group_outer: List[str], k_outer: int, group_inner: List[str], k_inner: int,
-                           r_outer: int, r_inner: int, mount_directory:str) -> Generator:
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o, k_o, group_inner, r_i, k_i)
-                    indices_train, indices_val, indices_test = fold_to_indices(cv_df, fold_name)
-
-                    for feature_name in feature_names:
-                        # y = labels
-                        # x_tr, y_tr = X[indices_train,:], y[indices_train]
-                        # x_val, y_val = X[indices_val,:], y[indices_val]
-                        # x_te, y_te = X[indices_test,:], y[indices_test]
-
-                        #create an adequate name for each file and save to .npy in the mount dictory
-
-                        fold_meta = {
-                            "r_outer": r_o,
-                            "k_outer": k_o,
-                            "r_inner": r_i,
-                            "k_inner": k_i,
-                            "fold_name": fold_name,
-                            "train_index": pl.Series(indices_train),
-                            "val_index": pl.Series(indices_val),
-                            "test_index": pl.Series(indices_test),
-                        }
-
-                        yield (models, feature_name, indices_train,indices_val,indices_test, fold_meta, mount_directory)
-
-
----
-
-## distributed cv
-
-from modal import Image
-import modal
-import polars as pl
-import os
-import numpy as np
-import polars as pl
-import time
-import os
-from typing import Tuple, Optional, Dict, List, Any, Union
-from cynde.functional.cv import generate_folds_from_np_modal_compatible, check_add_cv_index, preprocess_dataset, nested_cv, RESULTS_SCHEMA
-from cynde.functional.classify import fit_clf_from_np_modal, load_arrays_from_mount_modal
-
-cv_stub = modal.Stub("distributed_cv")
-LOCAL_MOUNT_PATH = os.getenv('MODAL_MOUNT')
-    
-datascience_image = (
-    Image.debian_slim(python_version="3.12.1")
-    .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
-    
-    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
-    .env({"CYNDE_DIR": "/opt/cynde"})
-    .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
-)
-with datascience_image.imports():
-    import polars as pl
-    import sklearn as sk
-    import cynde.functional as cf
-
-@cv_stub.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(LOCAL_MOUNT_PATH, remote_path="/root/cynde_mount")])
-def fit_models_modal(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
-               fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-
-    
-    pred_list = []
-    results_list = []
-    X,y = load_arrays_from_mount_modal(feature_name = feature_name)
-    x_tr, y_tr = X[indices_train,:], y[indices_train]
-    x_val, y_val = X[indices_val,:], y[indices_val]
-    x_te, y_te = X[indices_test,:], y[indices_test]
-
-    for model, hp_list in models.items():
-        for hp in hp_list:
-            pred_df_col, results_df_row = fit_clf_from_np_modal(x_tr, y_tr, x_val, y_val, x_te, y_te,
-                                                                fold_metadata=fold_meta,
-                                                  classifier=model,
-                                                  classifier_hp=hp,
-                                                  input_features_name=feature_name)
-            pred_list.append(pred_df_col)
-            
-            fold_meta_data_df = pl.DataFrame({
-                "k_outer": [fold_meta["k_outer"]],
-                "k_inner": [fold_meta["k_inner"]],
-                "r_outer": [fold_meta["r_outer"]],
-                "r_inner": [fold_meta["r_inner"]]
-            })
-            
-            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
-            results_list.append(results_df_row)
-    return pred_list, results_list
-
-def load_arrays_from_mount_local(feature_name:str,mount_directory:str):
-        X = np.load(os.path.join(mount_directory,feature_name+".npy"))
-        y = np.load(os.path.join(mount_directory,"labels.npy"))
-        return X,y
-    
-
-def fit_models_local(models: Dict[str, List[Dict[str, Any]]], feature_name: str, indices_train:np.ndarray,indices_val: np.ndarray,indices_test:np.ndarray,
-               fold_meta: Dict[str, Any],mount_directory:str) -> Tuple[List[pl.DataFrame], List[pl.DataFrame]]:
-
-    
-    pred_list = []
-    results_list = []
-    X,y = load_arrays_from_mount_local(feature_name = feature_name,mount_directory=mount_directory)
-    x_tr, y_tr = X[indices_train,:], y[indices_train]
-    x_val, y_val = X[indices_val,:], y[indices_val]
-    x_te, y_te = X[indices_test,:], y[indices_test]
-
-    for model, hp_list in models.items():
-        for hp in hp_list:
-            pred_df_col, results_df_row = fit_clf_from_np_modal(x_tr, y_tr, x_val, y_val, x_te, y_te,
-                                                                fold_metadata=fold_meta,
-                                                  classifier=model,
-                                                  classifier_hp=hp,
-                                                  input_features_name=feature_name)
-            pred_list.append(pred_df_col)
-            
-            fold_meta_data_df = pl.DataFrame({
-                "k_outer": [fold_meta["k_outer"]],
-                "k_inner": [fold_meta["k_inner"]],
-                "r_outer": [fold_meta["r_outer"]],
-                "r_inner": [fold_meta["r_inner"]]
-            })
-            
-            results_df_row = pl.concat([results_df_row, fold_meta_data_df], how="horizontal") 
-            results_list.append(results_df_row)
-    return pred_list, results_list
-
-def preprocess_np_modal(df: pl.DataFrame,
-                        mount_dir: str ,
-                        inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                        target_column:str = "target") -> Tuple[pl.DataFrame, pl.DataFrame]:
-    
-
-    # Preprocess the dataset
-    preprocess_start_time = time.time()
-    feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
-    #save the arrays to cynde_mount folder
-    print(f"Saving arrays to {mount_dir}")
-    for feature_name,feature_array in feature_arrays.items():
-        np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
-    np.save(os.path.join(mount_dir,"labels.npy"),labels)
-    preprocess_end_time = time.time()
-    print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
-
-def check_preprocessed_np_modal(mount_dir: str, inputs: List[Dict[str, Union[List[str], List[List[str]]]]]) -> bool:
-    for feature_dict in inputs:
-        for feature_list in feature_dict.values():
-            for feature in feature_list:
-                if not os.path.exists(os.path.join(mount_dir,feature+".npy")):
-                    raise ValueError(f"Feature {feature} not found in {mount_dir}")
-    return True
-
-def train_nested_cv_from_np_modal(df: pl.DataFrame,
-                        cv_type: Tuple[str, str],
-                        mount_dir: str ,
-                        inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                        models: Dict[str, List[Dict[str, Any]]],
-                        group_outer: List[str],
-                        k_outer: int,
-                        group_inner: List[str],
-                        k_inner: int,
-                        r_outer: int = 1,
-                        r_inner: int = 1,
-                        run_local: bool = False,
-                        target_column:str = "target",
-                        load_preprocess:bool=True) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    start_time = time.time()
-    df = check_add_cv_index(df)
-    pred_df = nested_cv(df, cv_type, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, return_joined=False)
-    cv_df = df.join(pred_df, on="cv_index", how="left")
-    results_df = pl.DataFrame(schema=RESULTS_SCHEMA)
-    print("results schema: ", results_df.schema)
-    print(f"results shape: {results_df.shape}")
-
-    # Preprocess the dataset
-    preprocess_start_time = time.time()
-    if load_preprocess:
-        check_preprocessed_np_modal(mount_dir,inputs)
-        feature_names = cf.derive_feature_names(inputs)
-    else:
-        feature_arrays, labels, _ = preprocess_dataset(df, inputs, target_column=target_column)
-        #save the arrays to cynde_mount folder
-        print(f"Saving arrays to {mount_dir}")
-        for feature_name,feature_array in feature_arrays.items():
-            np.save(os.path.join(mount_dir,feature_name+".npy"),feature_array)
-        np.save(os.path.join(mount_dir,"labels.npy"),labels)
-        feature_names = list(feature_arrays.keys())
-    preprocess_end_time = time.time()
-    print(f"Preprocessing completed in {preprocess_end_time - preprocess_start_time} seconds")
-
-    all_pred_list = []
-    all_results_list = []
-
-    # Generate folds and fit models
-    folds_generation_start_time = time.time()
-    fit_tasks = generate_folds_from_np_modal_compatible(models,cv_df, cv_type, feature_names, group_outer, k_outer, group_inner, k_inner, r_outer, r_inner, mount_dir)
-    if not run_local:
-        all_tuples_list = fit_models_modal.starmap(fit_tasks)
-    else:
-        all_tuples_list = []
-        for task in fit_tasks:
-            all_tuples_list.append(fit_models_local(*task))
-
-    #all_tuples_list is a list of tuples(list(pred_df),list(results_df)) we want to get to a single list
-    for (pred_list,res_list) in all_tuples_list:
-        all_results_list.extend(res_list)
-        all_pred_list.extend(pred_list)
-    #flatten the list of lists
-    for frame in all_pred_list:
-        pred_df = pred_df.join(frame, on="cv_index", how="left")
-    folds_generation_end_time = time.time()
-    print(f"Folds generation and model fitting completed in {folds_generation_end_time - folds_generation_start_time} seconds")
-    print(f"Average time per fold: {(folds_generation_end_time - folds_generation_start_time) / (k_outer * k_inner * r_outer * r_inner)}")
-
-
-
-    # Aggregate and save results
-    aggregation_start_time = time.time()
-    for results_df_row in all_results_list:
-        results_df = results_df.vstack(results_df_row)
-
-
-    aggregation_end_time = time.time()
-    print(f"Aggregation of results completed in {aggregation_end_time - aggregation_start_time} seconds")
-
-    save_results_start_time = time.time()
-    # cf.save_results(df, results_df, pred_df, save_name, base_path=base_path)
-    save_results_end_time = time.time()
-    print(f"Saving results completed in {save_results_end_time - save_results_start_time} seconds")
-
-    total_end_time = time.time()
-    print(f"Total training and processing time: {total_end_time - start_time} seconds")
-    tot_models =0
-    for model,hp_list in models.items():
-        tot_models += len(hp_list)
-
-    print(f"Total average time per fold: {(total_end_time - start_time) / (k_outer * k_inner * r_outer * r_inner*tot_models*len(inputs))} seconds")
-
-    return results_df, pred_df
 
 ---
 
@@ -1972,7 +928,6 @@ from time import perf_counter
 import os
 from typing import List, Union, Any, Optional
 import polars as pl
-from cynde.models.embedders import  get_embedding_list
 from openai import Client
 import json
 import tiktoken
@@ -1983,7 +938,9 @@ from cynde.async_tools.api_request_parallel_processor import process_api_request
 MAX_INPUT = {
     "text-embedding-3-small": 8191,
     "text-embedding-3-large": 8191,
-    "text-embedding-ada-002": 8191
+    "text-embedding-ada-002": 8191,
+    "togethercomputer/m2-bert-80M-32k-retrieval": 32_000,
+    "voyage-code-2":16_000
 }
 
 
@@ -2042,37 +999,6 @@ def generate_embedding_batched_payloads_from_column(filename: str, df: pl.DataFr
     
     return result_df
 
-# def generate_embedding_batched_payloads_from_column(filename: str, df: pl.DataFrame, column_name: str, model_name: str = "text-embedding-3-small", batch_size:int=100):
-#     """Generates embedding payloads from a column in a DataFrame and saves them to a JSONL file."""
-#     data = df[column_name].to_list()
-#     batch = []
-#     with open(filename, "w") as f:
-#         for x in data:
-#             # Replace single quotes with double quotes and escape inner double quotes and newline characters
-#             x = x.replace("'", '"').replace('"', '\\"').replace('\n', '\\n')
-#             batch.append(x)
-#             # Check if batch size is reached; note the off-by-one adjustment
-#             if len(batch) == batch_size:
-#                 payload = {"model": model_name, "input": batch}
-#                 f.write(json.dumps(payload) + "\n")
-#                 batch = []  # Reset batch
-
-#         # Handle last batch if it's not empty
-#         if batch:
-#             payload = {"model": model_name, "input": batch}
-#             f.write(json.dumps(payload) + "\n")
-
-#     # Read the JSONL file content into a list of dictionaries
-#     with open(filename, 'r') as f:
-#         json_list = [json.loads(line) for line in f]
-
-#     # Convert the list of dictionaries into a DataFrame
-#     payloads_df = pl.DataFrame(json_list)
-
-#     # Concatenate the original DataFrame column with the generated payloads DataFrame
-#     result_df = pl.concat([df.select(column_name), payloads_df], how="horizontal")
-
-#     return result_df
 
 
 def load_openai_emb_results_jsonl(file_path: str, column_name: str) -> pl.DataFrame:
@@ -2161,8 +1087,8 @@ def check_max_token_len(df:pl.DataFrame, column_name:str, max_len:int=8192):
 
     return df.select(pl.col('token_len').max().alias('max_token_len'))[0, 'max_token_len']
 
-def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, results_filepath: str, api_key: str, model_name="text-embedding-3-small", batch_size:int=100) -> pl.DataFrame:
-    request_url = "https://api.openai.com/v1/embeddings"
+def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, results_filepath: str, api_key: str, model_name="text-embedding-3-small", request_url = "https://api.openai.com/v1/embeddings", batch_size:int=5) -> pl.DataFrame:
+
     if check_max_token_len(df, column_name) > MAX_INPUT[model_name]:
         raise ValueError(f"Elements in the column exceed the max token length of {model_name}. Max token length is {MAX_INPUT[model_name]}, please remove or truncated the elements that exceed the max len in the column.")
     if model_name not in MAX_INPUT:
@@ -2179,8 +1105,8 @@ def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, res
             save_filepath=results_filepath,
             request_url=request_url,
             api_key=api_key,
-            max_requests_per_minute=float(10_000),
-            max_tokens_per_minute=float(10_000_000),
+            max_requests_per_minute=float(100),#10_000
+            max_tokens_per_minute=float(1_000_000),#10_000_000
             token_encoding_name="cl100k_base",
             max_attempts=int(5),
             logging_level=int(20),
@@ -2205,6 +1131,7 @@ def embed_columns(
     column_names: List[Union[str, List[str]]], 
     models: Union[str, List[str]] = "text-embedding-3-small",
     cache_dir: str = os.path.join(os.path.dirname(os.getcwd()), "cache"),
+    request_url = "https://api.openai.com/v1/embeddings",
     api_key: str = "<your_api_key_here>", # Assume API key is passed as a parameter or set elsewhere
 ) -> pl.DataFrame:
     """
@@ -2220,13 +1147,13 @@ def embed_columns(
         for model_name in models:
             
             # Generate file paths for requests and results
-            
-            requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_requests.jsonl")
-            results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_results.jsonl")
+            save_model_name = model_name.replace("/", "")
+            requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{save_model_name}_requests.jsonl")
+            results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{save_model_name}_results.jsonl")
             if os.path.exists(requests_filepath) or os.path.exists(results_filepath):
                 time_code = time.strftime("%Y-%m-%d_%H-%M-%S")
-                requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{model_name}_{time_code}_requests.jsonl")
-                results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{model_name}_{time_code}_results.jsonl")
+                requests_filepath = os.path.join(os.environ.get('CACHE_DIR'), f"{target_column}_{save_model_name}_{time_code}_requests.jsonl")
+                results_filepath = os.path.join(os.environ.get('OUTPUT_DIR'), f"{target_column}_{save_model_name}_{time_code}_results.jsonl")
                 
             
             # Generate embeddings and merge them into the DataFrame
@@ -2236,6 +1163,7 @@ def embed_columns(
                 requests_filepath=requests_filepath, 
                 results_filepath=results_filepath, 
                 api_key=api_key, 
+                request_url=request_url,
                 model_name=model_name
             )
             
@@ -2243,7 +1171,7 @@ def embed_columns(
     
     return df
 
-def compute_embedding_price(df, text_column, model):
+def compute_embedding_price(df:pl.DataFrame, text_column:str, model:str):
     # Define model prices per token
     model_prices = {
         "text-embedding-3-small": 0.00002 / 1000,
@@ -2282,6 +1210,72 @@ def compute_embedding_price(df, text_column, model):
     total_cost = df.select(pl.sum("price_per_row")).to_numpy()[0][0]
     
     return df, total_cost
+
+---
+
+## init
+
+# This is the __init__.py file for the package.
+
+
+---
+
+## modal embed
+
+import modal
+from pydantic import BaseModel,conint,ValidationError,Field
+from typing import List, Optional
+import polars as pl
+from cynde.functional.embed.types import EmbeddingRequest
+import numpy as np
+
+class EmbedConfig(BaseModel):
+    column: str
+    modal_endpoint: str = Field("example-tei-bge-small-en-v1.5",description="The modal endpoint to use for generating instructions")
+
+class EmbeddingResponse(BaseModel):
+    request: EmbeddingRequest
+    response: np.ndarray
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
+    f = modal.Function.lookup(embed_cfg.modal_endpoint, "Model.embed")
+    requests = []
+    for text in df[embed_cfg.column]:
+        request = EmbeddingRequest(inputs=text)
+        requests.append(request)
+    responses = []
+    responses_generator = f.map(requests)
+    for response in responses_generator:
+        validated_response = EmbeddingResponse(request=request,response=response)
+        responses.append(response)
+    #vstack the responses
+    responses = np.vstack(responses)
+    input_column_name = embed_cfg.column
+    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
+    df_responses = pl.DataFrame(data={output_column_name:responses})
+    df = pl.concat([df,df_responses],how="horizontal")
+    return df
+
+def validate_column(df:pl.DataFrame, embed_cfg: EmbedConfig):
+    input_column_name = embed_cfg.column
+    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
+    if output_column_name not in df.columns:
+        raise ValueError(f"Column {output_column_name} not found in DataFrame")
+    return df
+
+
+
+---
+
+## types
+
+from pydantic import BaseModel
+
+class EmbeddingRequest(BaseModel):
+    inputs: str
 
 ---
 
@@ -2480,6 +1474,1031 @@ def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_p
 
 ---
 
+## init
+
+# This is the __init__.py file for the package.
+
+
+---
+
+## modal gen
+
+import modal
+from pydantic import BaseModel,conint,ValidationError
+from typing import List, Optional
+import pickle
+import cloudpickle
+import polars as pl
+from cynde.functional.generate.types import LLamaInstruction,InstructionConfig
+from pydantic._internal._model_construction import ModelMetaclass
+
+
+
+def generate_instructions(df:pl.DataFrame, instruction:InstructionConfig) -> List[LLamaInstruction]:
+    system_prompt = instruction.system_prompt
+    column = instruction.column
+    output_schema = instruction.output_schema
+    instructions = []
+    for text in df[column]:
+        instruction = LLamaInstruction(system_prompt=system_prompt, user_message=text, output_schema=output_schema)
+        instructions.append(instruction)
+    return instructions
+    
+def generate_column(df:pl.DataFrame, instruction_cfg:InstructionConfig) -> pl.DataFrame:
+    f = modal.Function.lookup(instruction_cfg.modal_endpoint, "Model.generate")
+    instructions = generate_instructions(df,instruction_cfg)
+    requests = []
+    for instruction in instructions:
+        request = instruction.to_tgi_request()
+        requests.append(request)
+    responses = []
+    for request in requests:
+        response = f.remote(request)
+        responses.append(response.generated_text)
+    evaluation = [bool]
+
+
+    schema_name = instruction_cfg.output_schema["title"]
+    input_column_name = instruction_cfg.column
+    output_column_name = f"{input_column_name}_{schema_name}"
+    df_responses = pl.DataFrame(data={output_column_name:responses})
+    df = pl.concat([df,df_responses],how="horizontal")
+    return df
+
+def validate_df(df:pl.DataFrame, pydantic_model:BaseModel) -> pl.DataFrame:
+    json_schema = pydantic_model.model_json_schema()
+    name = json_schema["title"]
+    target_cols = [col for col in df.columns if name in col]
+    
+    for col in target_cols:
+        validations = []
+        validations_erros = []
+        for generation in df[col]:
+            try:
+                print("generation inside validation:",generation,type(generation))
+                validated_model = pydantic_model.model_validate_json(generation)
+                validations.append(True)
+                validations_erros.append(None)
+            except ValidationError as e:
+                validations.append(False)
+                validations_erros.append(e)
+        col_df = pl.DataFrame(data={f"{col}_validations":validations,f"{col}_errors":validations_erros})
+        df = pl.concat([df,col_df],how="horizontal")
+    return df
+
+
+
+---
+
+## types
+
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from cynde.deploy.types import TGIRequest, LLamaInst3Request, Grammar
+
+class LLamaInstruction(BaseModel):
+    system_prompt: str
+    user_message: str
+    output_schema: Optional[dict] = None
+
+    def template(self) -> str:
+        system_prompt = self.system_prompt
+        user_message = self.user_message
+        formatted_prompt =  """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+{user_message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
+        return formatted_prompt.format(system_prompt=system_prompt,user_message=user_message)
+    
+    def to_tgi_request(self,request_config: Optional[LLamaInst3Request] = None) -> LLamaInst3Request:
+        if request_config is None:
+            return LLamaInst3Request(prompt=self.template(),grammar=Grammar(type="json",value=self.output_schema))
+        request_config.prompt = self.template()
+        return LLamaInst3Request.model_validate(request_config,grammar = Grammar(type="json",value=self.output_schema))
+
+class InstructionConfig(BaseModel):
+    system_prompt: str
+    column: str
+    output_schema: Optional[dict] = None
+    modal_endpoint: str = Field("example-tgi-Meta-Llama-3-8B-Instruct",description="The modal endpoint to use for generating instructions")
+
+
+
+---
+
+## init
+
+# This is the __init__.py file for the package.
+
+
+---
+
+## classify
+
+from sklearn.ensemble import RandomForestClassifier,HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, PowerTransformer, QuantileTransformer, Normalizer, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+import polars as pl
+from typing import Tuple
+import time
+from cynde.functional.predict.types import PipelineResults,PredictConfig,PipelineInput,FeatureSet,InputConfig,ClassifierConfig,BaseClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
+from cynde.functional.predict.cv import train_test_val,generate_nested_cv
+from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index,validate_preprocessed_inputs
+
+def create_pipeline(df: pl.DataFrame, feature_set: FeatureSet, classifier_config: BaseClassifierConfig) -> Pipeline:
+    """ maybne the df.schema is enough and we do not need to pass the whole df """
+    transformers = []
+    numerical_features = [feature.column_name for feature in feature_set.numerical]
+    if numerical_features:
+        scaler = feature_set.numerical[0].get_scaler()  # Assuming all numerical features use the same scaler
+        transformers.append(("numerical", scaler, numerical_features))
+    embedding_features = [feature.column_name for feature in feature_set.embeddings]
+    if embedding_features:
+        #embedding features are stored as list[float] in polars but we map them to multiple columns of float in sklearn
+        # so here we assume that we already pre-processed each embedding_feature to bea  lsit of columns of format column_name_{i}
+        #accumulate for each embedding feature the list of columns that represent it and flatten it
+        embedding_features = [f"{feature}_{i}" for feature in embedding_features for i in range(0,feature_set.embeddings[0].embedding_size)]
+        scaler = feature_set.embeddings[0].get_scaler()  # Assuming all embedding features use the same scaler
+        transformers.append(("embedding", scaler, embedding_features))
+
+    categorical_features = [feature.column_name for feature in feature_set.categorical]
+    if categorical_features:
+        for feature in feature_set.categorical:
+            if feature.one_hot_encoding:
+                if df[feature.column_name].dtype == pl.Categorical:
+                    categories = [df[feature.column_name].unique().to_list()]
+                elif df[feature.column_name].dtype == pl.Enum:
+                    categories = [df[feature.column_name].dtype.categories]
+                else:
+                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Categorical or pl.Enum for one-hot encoding.")
+                one_hot_encoder = OneHotEncoder(categories=categories, handle_unknown='error', sparse_output=False)
+                transformers.append((f"categorical_{feature.column_name}", one_hot_encoder, [feature.column_name]))
+            else:
+                if df[feature.column_name].dtype not in [pl.Float32, pl.Float64]:
+                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Float32 or pl.Float64 for physical representation.")
+                transformers.append((f"categorical_{feature.column_name}", "passthrough", [feature.column_name]))
+
+    preprocessor = ColumnTransformer(transformers)
+
+    # Create the classifier based on the classifier configuration
+    if isinstance(classifier_config, LogisticRegressionConfig):
+        classifier = LogisticRegression(**classifier_config.dict(exclude={"classifier_name"}))
+    elif isinstance(classifier_config, RandomForestClassifierConfig):
+        classifier = RandomForestClassifier(**classifier_config.dict(exclude={"classifier_name"}))
+    elif isinstance(classifier_config, HistGradientBoostingClassifierConfig):
+        classifier = HistGradientBoostingClassifier(**classifier_config.dict(exclude={"classifier_name"}))
+    else:
+        raise ValueError(f"Unsupported classifier: {classifier_config.classifier_name}")
+
+    pipeline = Pipeline([("preprocessor", preprocessor), ("classifier", classifier)])
+    pipeline.set_output(transform="polars")
+    return pipeline
+
+def evaluate_model(pipeline: Pipeline, X, y):
+    """ Gotta make sure the returned predictions have the cv_index column"""
+    predictions = pipeline.predict(X)
+    accuracy = accuracy_score(y, predictions)
+    mcc = matthews_corrcoef(y,predictions)
+    pred_df = pl.DataFrame({"cv_index":X["cv_index"],"predictions":predictions})
+    return pred_df,accuracy, mcc
+
+
+def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+    feature_set = input_config.feature_sets[pipeline_input.feature_index]
+    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index)
+    print(df_fold)
+    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
+    print(df_train)
+    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
+    print(pipeline)
+    pipeline.fit(df_train,df_train["target"])
+    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
+    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
+    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
+    return PipelineResults(train_predictions = train_predictions,
+                           val_predictions=val_predictions,
+                           test_predictions=test_predictions,
+                           train_accuracy=train_accuracy,
+                           train_mcc=train_mcc,
+                           val_accuracy=val_accuracy,
+                           val_mcc=val_mcc,
+                           test_accuracy=test_accuracy,
+                           test_mcc=test_mcc)
+
+
+
+
+def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
+    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
+    1) Validate the input_config and check if the preprocessed features are present locally 
+    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
+    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
+    4) collect and aggregate the results locally and save and return the results
+    """
+    #validate the inputs and check if the preprocessed features are present locally
+    df = check_add_cv_index(df,strict=True)
+    validate_preprocessed_inputs(task_config.input_config)
+    
+    #extract the subset of columns necessary for constructing the cross validation folds 
+    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
+    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+
+    nested_cv = generate_nested_cv(df_idx,task_config)
+
+    for pipeline_input in nested_cv:
+        start = time.time()
+        print(f"Training pipeline with classifier {pipeline_input.cls_config.classifier_name} on feature set {task_config.input_config.feature_sets[pipeline_input.feature_index]}")
+        results = predict_pipeline(task_config.input_config,pipeline_input)
+        print(results)
+        end = time.time()
+        print(f"Training pipeline took {end-start} seconds")
+
+
+---
+
+## cv
+
+import polars as pl
+from pydantic import BaseModel
+from typing import List, Optional, Tuple, Generator
+import itertools
+from cynde.functional.predict.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
+
+from cynde.functional.predict.preprocess import check_add_cv_index
+
+
+
+
+def shuffle_frame(df:pl.DataFrame):
+    return df.sample(fraction=1,shuffle=True)
+
+def slice_frame(df:pl.DataFrame, num_slices:int, shuffle:bool = False, explode:bool = False) -> List[pl.DataFrame]:
+    max_index = df.shape[0]
+    if shuffle:
+        df = shuffle_frame(df)
+    indexes = [0] + [max_index//num_slices*i for i in range(1,num_slices)] + [max_index]
+    if explode:
+        return [df.slice(indexes[i],indexes[i+1]-indexes[i]).explode("cv_index").select(pl.col("cv_index")) for i in range(len(indexes)-1)]
+    else:
+        return [df.slice(indexes[i],indexes[i+1]-indexes[i]).select(pl.col("cv_index")) for i in range(len(indexes)-1)]
+
+def hacky_list_relative_slice(list: List[int], k: int):
+    slices = {}
+    slice_size = len(list) // k
+    for i in range(k):
+        if i < k - 1:
+            slices["fold_{}".format(i)] = list[i*slice_size:(i+1)*slice_size]
+        else:
+            # For the last slice, include the remainder
+            slices["fold_{}".format(i)] = list[i*slice_size:]
+    return slices
+
+def kfold_combinatorial(df: pl.DataFrame, config: KFoldConfig) -> CVSummary:
+    df = check_add_cv_index(df,strict=True)
+    cv_index = df["cv_index"].shuffle(seed=config.random_state)
+    num_samples = cv_index.shape[0]
+    fold_size = num_samples // config.k
+    index_start = pl.Series([int(i*fold_size) for i in range(config.k)])
+    train_indexes = []
+    test_indexes = []
+    fold_numbers = []
+    
+    print("index_start",index_start)
+    folds = [cv_index.slice(offset= start,length=fold_size) for start in index_start]
+    #use iter-tools to compute all combinations of indexes in train ant test let's assume only combinatorial for now
+    # folds are indexed from 0 to k-1 and we want to return k tuples with the indexes of the train and test folds the indexes are lists of integers of length respectively k-n_test and n_test
+    test_folds = list(itertools.combinations(range(config.k),config.n_test_folds))
+    print("num of test_folds combinations",len(test_folds))
+    for fold_number, test_fold in enumerate(test_folds):
+        # train_folds is a list list of indexes of the train folds and test is list of list of indexes of the test folds we have to flatten the lists and use those to vcat the series in folds to get the indexes of the train and test samples for each fold
+        test_series = pl.concat([folds[i] for i in test_fold]).sort()
+        train_series = pl.concat([folds[i] for i in range(config.k) if i not in test_fold]).sort()
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        fold_numbers.append(fold_number)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        fold_numbers=fold_numbers,
+    )
+    return summary
+
+def kfold_montecarlo(df: pl.DataFrame, config: KFoldConfig) -> CVSummary:
+    df = check_add_cv_index(df,strict=True)
+    cv_index = df["cv_index"].shuffle(seed=config.random_state)
+    num_samples = cv_index.shape[0]
+    fold_size = num_samples // config.k
+    train_indexes = []
+    test_indexes = []
+    montecarlo_replicas = []
+    for i in range(config.montecarlo_replicas):
+        train_series = cv_index.sample(frac=(config.k-config.n_test_folds)/config.k,replace=False,seed=config.random_state+i)
+        test_series = cv_index.filter(train_series,keep=False)
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        montecarlo_replicas.append(i)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        replica_numbers =montecarlo_replicas,
+    )
+    return summary
+
+def purged_combinatorial(df:pl.DataFrame, config: PurgedConfig) -> CVSummary:
+    df = check_add_cv_index(df,strict=True)
+    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col([config.groups]+["cv_index"]))
+    gdf_slices = slice_frame(gdf,config.k,shuffle=config.shuffle,explode=True)
+    train_indexes = []
+    test_indexes = []
+    fold_numbers = []
+    test_folds = list(itertools.combinations(range(config.k),config.n_test_folds))
+    for fold_number, test_fold in enumerate(test_folds):
+        test_series = pl.concat([gdf_slices[i] for i in test_fold]).sort()
+        train_series = pl.concat([gdf_slices[i] for i in range(config.k) if i not in test_fold]).sort()
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        fold_numbers.append(fold_number)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        fold_numbers=fold_numbers,
+    )
+    return summary
+
+def purged_montecarlo(df:pl.DataFrame, config: PurgedConfig) -> CVSummary:
+    df = check_add_cv_index(df,strict=True)
+    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col([config.groups]+["cv_index"]))
+    train_indexes = []
+    test_indexes = []
+    montecarlo_replicas = []
+    for i in range(config.montecarlo_replicas):
+        gdf_slices = slice_frame(gdf,config.k,shuffle=True,explode=True)
+        train_series = pl.concat(gdf_slices[:config.k-config.n_test_folds]).sort()
+        test_series = pl.concat(gdf_slices[config.k-config.n_test_folds:]).sort()
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        montecarlo_replicas.append(i)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        replica_numbers =montecarlo_replicas,
+    )
+    return summary
+
+def stratified_combinatorial(df:pl.DataFrame, config: StratifiedConfig) -> CVSummary:
+    k = config.k
+    df = check_add_cv_index(df,strict=True)
+    sdf = df.group_by(config.groups).agg(pl.col("cv_index"))
+    if config.shuffle:
+        sdf = sdf.with_columns(pl.col("cv_index").list.sample(fraction=1,shuffle=True))
+    sliced = sdf.select(pl.col("cv_index").map_elements(lambda s: hacky_list_relative_slice(s,k)).alias("hacky_cv_index")).unnest("hacky_cv_index")
+    train_indexes = []
+    test_indexes = []
+    fold_numbers = []
+    test_folds = list(itertools.combinations(range(config.k),config.n_test_folds))
+    for fold_number, test_fold in enumerate(test_folds):
+        test_series=sliced.select(pl.concat_list([sliced["fold_{}".format(j)] for j in range(config.k) if j in test_fold]).alias("cv_index")).explode("cv_index")["cv_index"]
+        train_series = sliced.select(pl.concat_list([sliced["fold_{}".format(j)] for j in range(config.k) if j not in test_fold]).alias("cv_index")).explode("cv_index")["cv_index"]
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        fold_numbers.append(fold_number)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        fold_numbers=fold_numbers,
+    )
+    return summary
+
+def stratified_montecarlo(df:pl.DataFrame, config: StratifiedConfig) -> CVSummary:
+    k = config.k
+    df = check_add_cv_index(df,strict=True)
+    sdf = df.group_by(config.groups).agg(pl.col("cv_index"))
+    if config.shuffle:
+        sdf = sdf.with_columns(pl.col("cv_index").list.sample(fraction=1,shuffle=True))
+    #instead of hackyrelative slice we can sampple the t
+    train_indexes = []
+    test_indexes = []
+    montecarlo_replicas = []
+    for i in range(config.montecarlo_replicas):
+        traintest = sdf.select(pl.col("cv_index"),pl.col("cv_index").list.sample(fraction=config.n_test_folds/k).alias("test_index")).with_columns(pl.col("cv_index").list.set_difference(pl.col("test_index")))
+        train_series = traintest.select("train_index").explode("train_index")["train_index"]
+        test_series = traintest.select("test_index").explode("test_index")["test_index"]
+        train_indexes.append(train_series.to_list())
+        test_indexes.append(test_series.to_list())
+        montecarlo_replicas.append(i)
+    summary = CVSummary(
+        cv_config=config,
+        train_indexes=train_indexes,
+        test_indexes=test_indexes,
+        replica_numbers =montecarlo_replicas,
+    )
+    return summary
+
+def cv_from_config(df:pl.DataFrame,config:BaseFoldConfig) -> CVSummary:
+    if isinstance(config,KFoldConfig) and config.fold_mode.COMBINATORIAL:
+        return kfold_combinatorial(df,config)
+    elif isinstance(config,KFoldConfig) and config.fold_mode.MONTE_CARLO:
+        return kfold_montecarlo(df,config)
+    elif isinstance(config,PurgedConfig) and config.fold_mode.COMBINATORIAL:
+        return purged_combinatorial(df,config)
+    elif isinstance(config,PurgedConfig) and config.fold_mode.MONTE_CARLO:
+        return purged_montecarlo(df,config)
+    elif isinstance(config,StratifiedConfig) and config.fold_mode.COMBINATORIAL:
+        return stratified_combinatorial(df,config)
+    elif isinstance(config,StratifiedConfig) and config.fold_mode.MONTE_CARLO:
+        return stratified_montecarlo(df,config)
+    else:
+        raise ValueError(f"Unsupported fold configuration: {config}")
+
+def train_test_val(df:pl.DataFrame,train_idx:pl.DataFrame,val_idx:pl.DataFrame,test_idx:pl.DataFrame) -> Tuple[pl.DataFrame,pl.DataFrame,pl.DataFrame]:
+    print("training idx",train_idx)
+    df_train = df.filter(pl.col("cv_index").is_in(train_idx["cv_index"]))
+    df_val = df.filter(pl.col("cv_index").is_in(val_idx["cv_index"]))
+    df_test = df.filter(pl.col("cv_index").is_in(test_idx["cv_index"]))
+    return df_train,df_val,df_test
+
+def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generator[PipelineInput,None,None]:
+    cv_config = task_config.cv_config
+    input_config = task_config.input_config
+    classifiers_config = task_config.classifiers_config
+    for r_o in range(cv_config.outer_replicas):
+        outer_cv = cv_from_config(df_idx, cv_config.outer)
+        #Outer Folds -- this is an instance of an outer cross-validation fold
+        for k_o, (dev_idx_o,test_idx_o) in enumerate(outer_cv.yield_splits()):
+            df_test_idx_o = df_idx.filter(pl.col("cv_index").is_in(test_idx_o))
+            df_dev_idx_o = df_idx.filter(pl.col("cv_index").is_in(dev_idx_o))
+            #Inner Replicas
+            for r_i in range(cv_config.inner_replicas):
+                inner_cv = cv_from_config(df_dev_idx_o, cv_config.inner)
+                #Inner Folds -- this is an instance of an inner cross-validation fold
+                for k_i,(train_idx_i,val_idx_i) in enumerate(inner_cv.yield_splits()):
+                    df_val_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(val_idx_i))
+                    df_train_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(train_idx_i))
+                    n_train = df_train_idx_o_i.shape[0]
+                    n_val = df_val_idx_o_i.shape[0]
+                    n_test = df_test_idx_o.shape[0]
+                    print(f"For outer replica {r_o}, outer fold {k_o}, inner replica {r_i}, inner fold {k_i}: train {n_train}, val {n_val}, test {n_test} samples.")
+                    #Feature types loop
+                    for feature_index,feature_set in enumerate(input_config.feature_sets):
+                        for classifier in classifiers_config.classifiers:
+                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier,input_config=input_config)
+
+---
+
+## cv test
+
+import logfire
+
+logfire.install_auto_tracing(modules=['cynde'])
+logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
+
+
+
+from cynde.functional.distributed_cv import train_nested_cv_from_np_modal, cv_stub, preprocess_np_modal
+import cynde.functional as cf
+import os
+import polars as pl
+from typing import List, Optional, Tuple, Generator
+import time
+from cynde.functional.predict.types import PredictConfig, BaseClassifierConfig,StratifiedConfig,Feature,FeatureSet,NumericalFeature, CategoricalFeature,EmbeddingFeature, InputConfig, ClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
+from cynde.functional.predict.preprocess import convert_utf8_to_enum, check_add_cv_index, preprocess_inputs, load_preprocessed_features
+from cynde.functional.predict.cv import stratified_combinatorial
+from cynde.functional.predict.classify import create_pipeline ,train_nested_cv
+
+from sklearn.metrics import accuracy_score
+from sklearn.pipeline import Pipeline
+
+
+
+
+
+
+def load_minihermes_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\OpenHermes-2.5_embedded.parquet") -> pl.DataFrame:
+    return pl.read_parquet(data_path)
+
+df = load_minihermes_data()
+df = convert_utf8_to_enum(df, threshold=0.2)
+df = check_add_cv_index(df,strict=False)
+print(df.columns)
+
+feature_set_small_data = {"embeddings":[{"column_name":"conversations_text-embedding-3-small_embeddings",
+                                         "name":"feature set for the smaller oai embeddings",
+                                         "embedder": "text-embedding-3-small_embeddings",
+                                         "embedding_size":1536}]}
+feature_set_large_data = {"embeddings":[{"column_name":"conversations_text-embedding-3-large_embeddings",
+                                         "name":"feature set for the larger oai embeddings",
+                                        "embedder": "text-embedding-3-large_embeddings",
+                                         "embedding_size":3072}]}
+
+input_config_data = {"feature_sets":[feature_set_small_data,feature_set_large_data],
+                        "target_column":"target",
+                        "save_folder":"C:/Users/Tommaso/Documents/Dev/Cynde/cynde_mount/"}
+
+input_config = InputConfig.model_validate(input_config_data,context={"df":df})
+print("Input config:")
+print(input_config)
+preprocess_inputs(df, input_config)
+
+classifiers_config = ClassifierConfig(classifiers=[RandomForestClassifierConfig(n_estimators=100),RandomForestClassifierConfig(n_estimators=500)])
+print("Classifiers config:")
+print(classifiers_config)
+groups = ["target"]
+cv_config = CVConfig(inner= StratifiedConfig(groups=groups,k=5),
+                     inner_replicas=1,
+                     outer = StratifiedConfig(groups=groups,k=5),
+                        outer_replicas=1)
+print("CV config:")
+print(cv_config)
+
+task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
+
+train_nested_cv(df,task)
+
+
+
+---
+
+## distributed
+
+import modal
+from modal import Image
+from typing import Tuple
+from cynde.functional.predict.classify import predict_pipeline
+from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig
+from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index
+from cynde.functional.predict.cv import train_test_val,generate_nested_cv
+from cynde.functional.predict.classify import create_pipeline ,evaluate_model
+
+
+
+app = modal.App("distributed_cv")
+    
+datascience_image = (
+    Image.debian_slim(python_version="3.12.1")
+    .apt_install("git")
+    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    
+    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
+    .env({"CYNDE_DIR": "/opt/cynde"})
+    .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
+)
+with datascience_image.imports():
+    import polars as pl
+    import sklearn as sk
+    import cynde as cy
+
+
+#define the distributed classification method
+@app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
+def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+    input_config = pipeline_input.input_config
+    feature_set = input_config.feature_sets[pipeline_input.feature_index]
+    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index,remote=True)
+    print(df_fold)
+    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
+    print(df_train)
+    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
+    print(pipeline)
+    pipeline.fit(df_train,df_train["target"])
+    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
+    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
+    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
+    return PipelineResults(train_predictions = train_predictions,
+                           val_predictions=val_predictions,
+                           test_predictions=test_predictions,
+                           train_accuracy=train_accuracy,
+                           train_mcc=train_mcc,
+                           val_accuracy=val_accuracy,
+                           val_mcc=val_mcc,
+                           test_accuracy=test_accuracy,
+                           test_mcc=test_mcc)
+
+def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl.DataFrame:
+    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
+    1) Validate the input_config and check if the preprocessed features are present locally 
+    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
+    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
+    4) collect and aggregate the results locally and save and return the results
+    """
+    #validate the inputs and check if the preprocessed features are present locally
+    df = check_add_cv_index(df,strict=True)
+    
+    
+    #extract the subset of columns necessary for constructing the cross validation folds 
+    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
+    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+
+    nested_cv = generate_nested_cv(df_idx,task_config)
+    all_results = []
+    for result in predict_pipeline_distributed.map(list(nested_cv)):
+        all_results.append(result)
+    re_validated_results = []
+    for result in all_results:
+        re_validated_results.append(PipelineResults.model_validate(result))
+    print("Finished!! " ,len(all_results))
+
+---
+
+## preprocess
+
+import polars as pl
+import numpy as np
+from typing import Optional, Tuple
+from cynde.functional.predict.types import InputConfig,FeatureSet
+import os
+
+def convert_utf8_to_enum(df: pl.DataFrame, threshold: float = 0.2) -> pl.DataFrame:
+    if not 0 < threshold < 1:
+        raise ValueError("Threshold must be between 0 and 1 (exclusive).")
+
+    for column in df.columns:
+        if df[column].dtype == pl.Utf8 and len(df[column]) > 0:
+            unique_values = df[column].unique()
+            unique_ratio = len(unique_values) / len(df[column])
+
+            if unique_ratio <= threshold:
+                enum_dtype = pl.Enum(unique_values.to_list())
+                df = df.with_columns(df[column].cast(enum_dtype))
+            else:
+                print(f"Column '{column}' has a high ratio of unique values ({unique_ratio:.2f}). Skipping conversion to Enum.")
+        elif df[column].dtype == pl.Utf8 and len(df[column]) == 0:
+            print(f"Column '{column}' is empty. Skipping conversion to Enum.")
+
+    return df
+
+def convert_enum_to_physical(df: pl.DataFrame) -> pl.DataFrame:
+    df_physical = df.with_columns(
+        [pl.col(col).to_physical() for col in df.columns if df[col].dtype == pl.Enum]
+    )
+    return df_physical
+
+def check_add_cv_index(df:pl.DataFrame,strict:bool=False) -> Optional[pl.DataFrame]:
+    if "cv_index" not in df.columns and not strict:
+        df = df.with_row_index(name="cv_index")
+    elif "cv_index" not in df.columns and strict:
+        raise ValueError("cv_index column not found in the DataFrame.")
+    return df
+
+def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
+    """ Saves .parquet for each feature set in input_config """
+    save_folder = input_config.save_folder
+    for feature_set in input_config.feature_sets:
+        column_names = feature_set.column_names()
+        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
+        print(f"selected columns: {feature_set_df.columns}")
+        #explodes all the embedding columns into list of columns
+        # for feature in feature_set.embeddings:
+        #     print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
+        #     feature_set_df = map_list_to_cols(feature_set_df,feature.column_name)
+
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(save_folder, f"{save_name}.parquet")
+        feature_set_df.write_parquet(save_path)
+
+def load_preprocessed_features(input_config:InputConfig,feature_set_id:int,convert_embeddings:bool=True, remote:bool = False) -> pl.DataFrame:
+    """ Loads the the train,val and test df for a specific feature set fold """
+    folder = input_config.save_folder if not remote else input_config.remote_folder
+    print("""Loading from folder: {}""".format(folder))
+
+    feature_set = input_config.feature_sets[feature_set_id]
+    file_name = feature_set.joined_names()
+    if file_name is None:
+        raise ValueError(f"Feature set {feature_set_id} not found in input config.")
+    file_path = os.path.join(folder, f"{file_name}.parquet")
+    df = pl.read_parquet(file_path)
+    if convert_embeddings:
+        for feature in feature_set.embeddings:
+            print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
+            df = map_list_to_cols(df,feature.column_name)
+    return df
+
+def validate_preprocessed_inputs(input_config:InputConfig) -> None:
+    """ Validates the preprocessed input config checking if the .parquet files are present """
+    path = input_config.save_folder
+    for feature_set in input_config.feature_sets:
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(path, f"{save_name}.parquet")
+        if not os.path.exists(save_path):
+            raise ValueError(f"Preprocessed feature set '{save_name}' not found at '{save_path}'.")
+
+
+def map_list_to_cols(df:pl.DataFrame, list_column:str) -> pl.DataFrame:
+    """ Maps a list column to a DataFrame """
+    width = len(df[list_column][0])
+    return df.with_columns(pl.col(list_column).list.get(i).alias(f"{list_column}_{i}") for i in range(width)).select(pl.all().exclude(list_column))
+
+
+---
+
+## types
+
+from enum import Enum
+import polars as pl
+from pydantic import BaseModel, ValidationInfo, model_validator,Field,ValidationInfo, field_validator
+
+from enum import Enum
+from typing import Optional, Union, Dict, Literal, Any, List, Tuple, Type, TypeVar, Generator
+
+
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, PowerTransformer, QuantileTransformer, Normalizer, OneHotEncoder
+
+
+
+class ScalerType(str, Enum):
+    STANDARD_SCALER = "StandardScaler"
+    MIN_MAX_SCALER = "MinMaxScaler"
+    MAX_ABS_SCALER = "MaxAbsScaler"
+    ROBUST_SCALER = "RobustScaler"
+    POWER_TRANSFORMER = "PowerTransformer"
+    QUANTILE_TRANSFORMER = "QuantileTransformer"
+    NORMALIZER = "Normalizer"
+
+class Feature(BaseModel):
+    column_name: str
+    name: str
+    description: Optional[str] = None
+
+    @field_validator("column_name")
+    @classmethod
+    def column_in_df(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if column_name not in df.columns:
+                raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
+        return v
+
+
+class NumericalFeature(Feature):
+    scaler_type: ScalerType = Field(ScalerType.STANDARD_SCALER, description="The type of scaler to apply to the numerical feature.")
+
+    def get_scaler(self):
+        scaler_map = {
+            ScalerType.STANDARD_SCALER: StandardScaler(),
+            ScalerType.MIN_MAX_SCALER: MinMaxScaler(),
+            ScalerType.MAX_ABS_SCALER: MaxAbsScaler(),
+            ScalerType.ROBUST_SCALER: RobustScaler(),
+            ScalerType.POWER_TRANSFORMER: PowerTransformer(),
+            ScalerType.QUANTILE_TRANSFORMER: QuantileTransformer(),
+            ScalerType.NORMALIZER: Normalizer(),
+        }
+        return scaler_map[self.scaler_type]
+    
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [pl.Boolean, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Float32, pl.Float64, pl.Decimal]:
+                current_dtype = df[column_name].dtype
+                raise ValueError(f"Column '{column_name}'  with dtype {current_dtype} must be of a numeric type (Boolean, Integer, Unsigned Integer, Float, or Decimal) .")
+
+        return v
+
+
+class EmbeddingFeature(NumericalFeature):
+    embedder: str = Field("text-embedding-3-small", description="The embedder model that generated the vector.")
+    embedding_size:int = Field(1536, description="The size of the embedding vector.")
+
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [pl.List(pl.Float32), pl.List(pl.Float64)]:
+                current_dtype = df[column_name].dtype
+                raise ValueError(f"Column '{column_name}'  with dtype {current_dtype} must be of type pl.List(pl.Float32) or pl.List(pl.Float64).")
+        return v
+
+class CategoricalFeature(Feature):
+    one_hot_encoding: bool = Field(True, description="Whether to apply one-hot encoding to the categorical feature.")
+
+    @field_validator("column_name")
+    @classmethod
+    def column_correct_type(cls, v: str, info: ValidationInfo):
+        column_name = v
+        context = info.context
+        if context:
+            df = context.get("df",pl.DataFrame())
+            if df[column_name].dtype not in [
+                pl.Utf8,
+                pl.Categorical,
+                pl.Enum,
+                pl.Int8,
+                pl.Int16,
+                pl.Int32,
+                pl.Int64,
+                pl.UInt8,
+                pl.UInt16,
+                pl.UInt32,
+                pl.UInt64,
+            ]:
+                current_dtype = df[column_name].dtype
+                raise ValueError(
+                    f"Column '{column_name}' with dtype {current_dtype}  must be of type pl.Utf8, pl.Categorical, pl.Enum, or an integer type."
+                )
+        return v
+
+class FeatureSet(BaseModel):
+    numerical: List[NumericalFeature] = []
+    embeddings: List[EmbeddingFeature] = []
+    categorical: List[CategoricalFeature] = []
+
+
+    def all_features(self):
+        return self.numerical + self.embeddings + self.categorical
+    def column_names(self):
+        return [feature.column_name for feature in self.all_features()]
+    def joined_names(self):
+        return "_".join(sorted(self.column_names()))
+
+class InputConfig(BaseModel):
+    feature_sets: List[FeatureSet]
+    target_column: str = Field("target", description="The target column to predict.")
+    remote_folder: str = Field("/root/cynde_mount", description="The remote folder to save the preprocessed features.")
+
+    save_folder: Optional[str] = None
+
+
+
+class ClassifierName(str, Enum):
+    LOGISTIC_REGRESSION = "LogisticRegression"
+    RANDOM_FOREST = "RandomForestClassifier"
+    HIST_GRADIENT_BOOSTING = "HistGradientBoostingClassifier"
+
+class BaseClassifierConfig(BaseModel):
+    classifier_name: ClassifierName
+    
+
+class LogisticRegressionConfig(BaseClassifierConfig):
+    classifier_name: Literal[ClassifierName.LOGISTIC_REGRESSION] = Field(ClassifierName.LOGISTIC_REGRESSION)
+    n_jobs: int = Field(-1, description="Number of CPU cores to use.")
+    penalty: str = Field("l2", description="Specify the norm of the penalty.")
+    dual: bool = Field(False, description="Dual or primal formulation.")
+    tol: float = Field(1e-4, description="Tolerance for stopping criteria.")
+    C: float = Field(1.0, description="Inverse of regularization strength.")
+    fit_intercept: bool = Field(True, description="Specifies if a constant should be added to the decision function.")
+    intercept_scaling: float = Field(1, description="Scaling factor for the constant.")
+    class_weight: Optional[Union[str, Dict[Any, float]]] = Field(None, description="Weights associated with classes.")
+    random_state: Optional[int] = Field(None, description="Seed for random number generation.")
+    solver: str = Field("lbfgs", description="Algorithm to use in the optimization problem.")
+    max_iter: int = Field(100, description="Maximum number of iterations.")
+    multi_class: str = Field("auto", description="Approach for handling multi-class targets.")
+    verbose: int = Field(0, description="Verbosity level.")
+    warm_start: bool = Field(False, description="Reuse the solution of the previous call to fit.")
+    l1_ratio: Optional[float] = Field(None, description="Elastic-Net mixing parameter.")
+
+class RandomForestClassifierConfig(BaseClassifierConfig):
+    classifier_name: Literal[ClassifierName.RANDOM_FOREST] = Field(ClassifierName.RANDOM_FOREST)
+    n_jobs: int = Field(-1, description="Number of CPU cores to use.")
+    n_estimators: int = Field(100, description="The number of trees in the forest.")
+    criterion: str = Field("gini", description="The function to measure the quality of a split.")
+    max_depth: Optional[int] = Field(None, description="The maximum depth of the tree.")
+    min_samples_split: Union[int, float] = Field(2, description="The minimum number of samples required to split an internal node.")
+    min_samples_leaf: Union[int, float] = Field(1, description="The minimum number of samples required to be at a leaf node.")
+    min_weight_fraction_leaf: float = Field(0.0, description="The minimum weighted fraction of the sum total of weights required to be at a leaf node.")
+    max_features: Union[str, int, float] = Field("sqrt", description="The number of features to consider when looking for the best split.")
+    max_leaf_nodes: Optional[int] = Field(None, description="Grow trees with max_leaf_nodes in best-first fashion.")
+    min_impurity_decrease: float = Field(0.0, description="A node will be split if this split induces a decrease of the impurity greater than or equal to this value.")
+    bootstrap: bool = Field(True, description="Whether bootstrap samples are used when building trees.")
+    oob_score: bool = Field(False, description="Whether to use out-of-bag samples to estimate the generalization score.")
+    
+    random_state: Optional[int] = Field(None, description="Seed for random number generation.")
+    verbose: int = Field(0, description="Verbosity level.")
+    warm_start: bool = Field(False, description="Reuse the solution of the previous call to fit and add more estimators to the ensemble.")
+    class_weight: Optional[Union[str, Dict[Any, float]]] = Field(None, description="Weights associated with classes.")
+    ccp_alpha: float = Field(0.0, description="Complexity parameter used for Minimal Cost-Complexity Pruning.")
+    max_samples: Optional[Union[int, float]] = Field(None, description="If bootstrap is True, the number of samples to draw from X to train each base estimator.")
+    monotonic_cst: Optional[Dict[str, int]] = Field(None, description="Monotonic constraint to enforce on each feature.")
+
+class HistGradientBoostingClassifierConfig(BaseClassifierConfig):
+    classifier_name: Literal[ClassifierName.HIST_GRADIENT_BOOSTING] = Field(ClassifierName.HIST_GRADIENT_BOOSTING)
+    loss: str = Field("log_loss", description="The loss function to use in the boosting process.")
+    learning_rate: float = Field(0.1, description="The learning rate, also known as shrinkage.")
+    max_iter: int = Field(100, description="The maximum number of iterations of the boosting process.")
+    max_leaf_nodes: int = Field(31, description="The maximum number of leaves for each tree.")
+    max_depth: Optional[int] = Field(None, description="The maximum depth of each tree.")
+    min_samples_leaf: int = Field(20, description="The minimum number of samples per leaf.")
+    l2_regularization: float = Field(0.0, description="The L2 regularization parameter.")
+    max_features: Union[str, int, float] = Field(1.0, description="Proportion of randomly chosen features in each and every node split.")
+    max_bins: int = Field(255, description="The maximum number of bins to use for non-missing values.")
+    categorical_features: Optional[Union[str, List[int], List[bool]]] = Field("warn", description="Indicates the categorical features.")
+    monotonic_cst: Optional[Dict[str, int]] = Field(None, description="Monotonic constraint to enforce on each feature.")
+    interaction_cst: Optional[Union[str, List[Tuple[int, ...]]]] = Field(None, description="Specify interaction constraints, the sets of features which can interact with each other in child node splits.")
+    warm_start: bool = Field(False, description="Reuse the solution of the previous call to fit and add more estimators to the ensemble.")
+    early_stopping: Union[str, bool] = Field("auto", description="Whether to use early stopping to terminate training when validation score is not improving.")
+    scoring: Optional[str] = Field("loss", description="Scoring parameter to use for early stopping.")
+    validation_fraction: float = Field(0.1, description="Proportion of training data to set aside as validation data for early stopping.")
+    n_iter_no_change: int = Field(10, description="Used to determine when to stop if validation score is not improving.")
+    tol: float = Field(1e-7, description="The absolute tolerance to use when comparing scores.")
+    verbose: int = Field(0, description="Verbosity level.")
+    random_state: Optional[int] = Field(None, description="Seed for random number generation.")
+    class_weight: Optional[Union[str, Dict[Any, float]]] = Field(None, description="Weights associated with classes.")
+
+class ClassifierConfig(BaseModel):
+    classifiers: List[Union[LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig]]
+
+
+class FoldMode(str, Enum):
+    COMBINATORIAL = "Combinatorial"
+    MONTE_CARLO = "MonteCarlo"
+
+class BaseFoldConfig(BaseModel):
+    k: int = Field(5, description="Number of folds. Divides the data into k equal parts. last k can be smaller or larger than the rest depending on the // of the data by k." )
+    n_test_folds: int = Field(1, description="Number of test folds to use for cross-validation. Must be strictly less than k. if the fold mode is montecarlo they are sampled first and then the rest are used for training. If the fold mode is combinatorial the all symmetric combinations n_test out of k are sampled.")
+    fold_mode: FoldMode = Field(FoldMode.COMBINATORIAL, description="The mode to use for splitting the data into folds. Combinatorial splits the data into k equal parts, while Monte Carlo randomly samples the k equal parts without replacement.")
+    shuffle: bool = Field(True, description="Whether to shuffle the data before splitting.")
+    random_state: Optional[int] = Field(None, description="Seed for random number generation. In the case of montecarlo cross-validation at each replica the seed is increased by 1 mantaining replicability while ensuring that the samples are different.")
+    montecarlo_replicas: int = Field(5, description="Number of random replicas to use for montecarlo cross-validation.")
+
+class KFoldConfig(BaseFoldConfig):
+    pass
+
+class StratificationMode(str, Enum):
+    PROPORTIONAL = "Proportional"
+    UNIFORM_STRICT = "UniformStrict"
+    UNIFORM_RELAXED = "UniformRelaxed"
+
+class StratifiedConfig(BaseFoldConfig):
+    groups: List[str] = Field([], description="The df column(s) to use for stratification. They will be used for a group-by operation to ensure that the stratification is done within each group.")
+    strat_mode : StratificationMode = Field(StratificationMode.PROPORTIONAL, description="The mode to use for stratification. Proportional ensures that the stratification is done within each group mantaining the original proportion of each group in the splits, this is done by first grouping and then breaking each group inot k equal parts, this ensure all the samples in each group are in train and test with the same proprtion. Uniform instead ensures that each group has the same number of samples in each train and test fold, this is not compatible with the proportional mode.")
+    group_size : Optional[int] = Field(None, description="The number of samples to use for each group in the stratificaiton it will only be used if the strat_mode is uniform or uniform relaxed. If uniform relaxed is used the group size will be used as a target size for each group but if a group has less samples than the target size it will be used as is. If uniform strict is used the group_size for all groups will be forced to the min(group_size, min_samples_in_group).")
+
+class PurgedConfig(BaseFoldConfig):
+    groups: List[str] = Field([], description="The df column(s) to use for purging. They will be used for a group-by operation to ensure that the purging at the whole group level. K is going to used to determine the fraction of groups to purge from train and restrict to test. When the mode is montecarlo the groups are sampled first and then the rest are used for training. If the fold mode is combinatorial the all symmetric combinations n_test out of k groups partitions are sampled")
+
+class CVConfig(BaseModel):
+    inner: Union[KFoldConfig,StratifiedConfig,PurgedConfig]
+    inner_replicas: int = Field(1, description="Number of random replicas to use for inner cross-validation.")
+    outer: Optional[Union[KFoldConfig,StratifiedConfig,PurgedConfig]] = None
+    outer_replicas: int = Field(1, description="Number of random replicas to use for outer cross-validation.")
+
+class PredictConfig(BaseModel):
+    cv_config: CVConfig
+    input_config: InputConfig
+    classifiers_config: ClassifierConfig
+
+class CVSummary(BaseModel):
+    cv_config: Union[KFoldConfig,StratifiedConfig,PurgedConfig] = Field(description="The cross-validation configuration. Required for the summary.")
+    train_indexes: List[List[int]] = Field(description="The indexes of the training samples for each fold or replica.")
+    test_indexes: List[List[int]] = Field(description="The indexes of the testing samples for each fold or replica.")
+    fold_numbers: Optional[List[int]] = Field(None, description="The fold number for each sample. Used when the fold mode is combinatorial.")
+    replica_numbers : Optional[List[int]] = Field(None, description="The replica number for each sample. Used when the fold mode is montecarlo.")
+    
+    def yield_splits(self) -> Generator[Tuple[pl.Series, pl.Series], None, None]:
+        for train_idx, test_idx in zip(self.train_indexes, self.test_indexes):
+            train_series = pl.Series(train_idx)
+            test_series = pl.Series(test_idx)
+            yield train_series, test_series
+
+class PipelineInput(BaseModel):
+    train_idx:pl.DataFrame
+    val_idx:pl.DataFrame
+    test_idx:pl.DataFrame
+    feature_index:int
+    cls_config:BaseClassifierConfig
+    input_config : InputConfig
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+class PipelineResults(BaseModel):
+    train_predictions:pl.DataFrame
+    val_predictions:pl.DataFrame
+    test_predictions:pl.DataFrame
+    train_accuracy:float
+    train_mcc:float
+    val_accuracy:float
+    val_mcc:float
+    test_accuracy:float
+    test_mcc:float
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+
+
+
+
+---
+
 ## prompt
 
 from typing import List, Union
@@ -2563,6 +2582,7 @@ def results_summary(results:pl.DataFrame,by_test_fold:bool=False) -> pl.DataFram
 
 
 
+
 def get_predictions(joined_df:pl.DataFrame,
                     cv_type: Tuple[str, str],
                     inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
@@ -2618,6 +2638,13 @@ def get_all_predictions_by_inputs_model(joined_df:pl.DataFrame,
                                                     raise ValueError(f"Column {pred_col_name} not found in the joined_df")
                                                 pred_cols_by_model.append((fold_name,pred_col_name))
                                 yield input_name,model,hp_name,pred_cols_by_model
+
+---
+
+## init
+
+# This is the __init__.py file for the package.
+
 
 ---
 
