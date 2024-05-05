@@ -59,8 +59,10 @@ graph LR
     F --> U[Modal Deploy TrainSK]
     U --> V[Save in Model Volume]
     V --> W[Modal Deploy PredictSK]
-    W --> X[cynde.functional.predict.predict]
-    X --> E2
+    E --> X[cynde.functional.predict.predict]
+    W --> F2[Remote Inference PredictSK]
+    X --> F2
+    F2 --> E2
 ```
 
 ## Serverless Deployment and Autoscaling
