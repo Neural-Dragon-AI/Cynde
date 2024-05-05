@@ -11,13 +11,13 @@ graph TD
     P --> F[Autoscaling]
     F --> G[CPU Workload]
     E --> G
+    F --> M[GPU Workload]
 
     A --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
     I --> J[Cloud-Hosted]
     I --> K[Locally-Hosted]
-    H --> L[Autoscaling]
-    L --> M[GPU Workload]
+    H --> M
     M --> N[Hugging Face TGI]
     M --> O[Hugging Face TEI]
 
