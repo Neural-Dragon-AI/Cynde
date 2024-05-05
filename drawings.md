@@ -18,10 +18,9 @@ graph TD
     H --> I[OpenAI API-Compatible Servers]
     I --> J[Cloud-Hosted]
     I --> K[Locally-Hosted]
-    H --> M
-    M --> N[Hugging Face TGI]
+    H --> N[Hugging Face TGI]
    
-    M --> O[Hugging Face TEI]
+    H --> O[Hugging Face TEI]
 
 
     A --> Y[Observability]
