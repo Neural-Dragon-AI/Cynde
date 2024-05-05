@@ -9,7 +9,7 @@ Cynde is a Python framework designed to streamline the integration of large lang
 
 ## Key Features
 
-1. **Serverless LLM Integration**: Cynde seamlessly integrates with serverless computing platforms like Modal for massively parallel LLM processing. It supports both direct API access to popular LLMs like OpenAI's GPT models and self-hosted deployments using open-source models like Meta's LLaMA and Hugging Face's text-generation-inference (TGI) and text-embedding-inference (TEI) servers. These self-hosted deployments are managed through Modal, ensuring scalability and efficiency. Additionally, Cynde is compatible with any OpenAI API-compatible remote or local deployment for embedding generation and structured text generation.
+1. **Serverless LLM Integration**: Cynde seamlessly integrates with serverless computing platforms like Modal for massively parallel LLM processing. It supports both direct API access to popular LLMs like OpenAI's GPT models and self-hosted deployments using open-source models like Meta's LLaMA and Hugging Face's text-generation-inference (TGI) and text-embedding-inference (TEI) servers. These self-hosted deployments are managed by Cynde through Modal, ensuring scalability and efficiency. Additionally, Cynde is compatible with any OpenAI API-compatible remote or local server deployment for embedding generation and structured text generation.
 
 2. **Polars DataFrames**: Built on top of Polars, a fast and efficient DataFrame library for Rust and Python, Cynde leverages lazy evaluation and query optimization to efficiently process large-scale data.
 
