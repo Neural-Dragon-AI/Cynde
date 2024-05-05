@@ -5,7 +5,7 @@ python -m pip install pathto/Cynde
 Hard refactor ongoing, shamelessly pushing to main for interactive debugging with modal image constructions. 
 ## Introduction
 
-Cynde is a Python framework designed to streamline the integration of large language models (LLMs) with the Polars DataFrame library and decision tree ensembles for efficient and scalable data processing. The framework provides a set of modular and composable tools for tasks such as embedding generation, structured text generation, and predictive modeling, with a focus on leveraging the power of LLMs and serverless computing.
+Cynde is a Python framework designed to streamline the integration of large language models (LLMs) with the modern data-science stack like Polars DataFrames and decision tree ensembles for efficient and scalable data processing. The framework provides a set of modular and composable tools for tasks such as embedding generation, structured text generation, and predictive modeling, with a focus on leveraging the power of LLMs and serverless computing.
 
 ## Key Features
 
