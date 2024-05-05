@@ -10,8 +10,8 @@ Cynde is a Python framework designed to streamline the integration of large lang
 
 Cynde offers two main behavioral patterns for interacting with LLMs:
 
-1. Compatibility with OpenAI API-compatible servers, including popular LLMs like OpenAI's GPT models and self-hosted solutions like llama.cpp or OpenLLaMA
-2. Self-hosted deployments using open-source models like Meta's LLaMA and Hugging Face's text-generation-inference (TGI) and text-embedding-inference (TEI) servers, managed by Cynde through Modal
+1. Compatibility with OpenAI API-compatible servers, including popular LLMs like OpenAI's GPT models and self-hosted solutions like LMStudio, llama.cpp, or Ollama.
+2. Self-hosted deployments using open-source models like Meta's LLaMA and Hugging Face's text-generation-inference (TGI) and text-embedding-inference (TEI) servers, managed by Cynde through Modal.
 
 The framework is designed to be flexible and adaptable to various LLM backends, allowing users to choose the most suitable option for their needs, whether it's a cloud-based API or a self-hosted solution.
 
