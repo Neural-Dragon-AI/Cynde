@@ -9,10 +9,10 @@ graph TD
     B --> Ot[Outlines]
     A --> P[Serverless Deployments with Modal]
 
-    P --> F[Autoscaling]
+    F[Autoscaling] --> P
     G[CPU Workload] --> F
     E --> G
-   M[GPU Workload] --> F
+    M[GPU Workload] --> F
 
     B --> H[LLM Integration]
     H --> I[OpenAI API-Compatible Servers]
@@ -27,7 +27,7 @@ graph TD
 
 
     A --> Y[Observability]
-    Y --> Z[Logfire Integration]
+    D --> Z[Logfire Integration]
     B --> Z
 ```
 
