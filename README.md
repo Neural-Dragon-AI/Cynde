@@ -59,9 +59,9 @@ graph LR
     F --> U[Modal Deploy TrainSK]
     U --> V[Save in Model Volume]
     V --> W[Modal Deploy PredictSK]
-    E --> X[cynde.functional.predict.predict]
+    F --> X[cynde.functional.predict.predict]
     W --> F2[Remote Inference PredictSK]
-    X --> F2
+    X --> W
     F2 --> E2
 ```
 
