@@ -6,7 +6,7 @@ graph TD
     B --> C[Polars DataFrames]
     B --> E[Gradient Boosted Trees SKLearn]
     A --> P[Serverless Deployments with Modal]
-
+    B --> PD[Pydantic]
     F[Autoscaling] --> P
     P --> F
     G[CPU Workload] --> F
@@ -26,6 +26,7 @@ graph TD
 
     A --> Y[Observability]
     Y --> Z[Logfire Integration]
+    PD--> Z
 ```
 
 In this updated mermaid graph:
