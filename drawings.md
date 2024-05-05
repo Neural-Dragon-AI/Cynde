@@ -2,9 +2,10 @@ Here's the updated mermaid graph based on your requirements:
 
 ```mermaid
 graph TD
-    A[Cynde Framework] --> B[Data Processing]
+   C[Polars DataFrames] --> B[Data Processing]
+    A[Cynde Framework] --> B
     PD[Pydantic] --> B
-    C[Polars DataFrames] --> B
+    
     B --> E[Gradient Boosted Trees SKLearn]
     A --> P[Serverless Deployments with Modal]
     F[Autoscaling] --> P
