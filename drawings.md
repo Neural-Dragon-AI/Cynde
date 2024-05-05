@@ -7,15 +7,15 @@ graph LR
     D[DataFrame<br>float] --> C
     E[DataFrame<br>enum] --> C
     T[DataFrame<br>struct] --> C
-    D --> F[cynde.functional.predict.train]
-    E --> F
+    E --> F[cynde.functional.predict.train]
+    D --> F
     G[DataFrame<br>list_float] --> F
 
     H[Pydantic Model] --> C
 
     B --> I[JSON Caching]
     B --> J[Modal Deploy TEI]
-    I --> K[OpenAI API]
+    I --> K[OpenAI Compatible API]
     J --> L[Remote Inference TEI]
     K --> M[JSON Caching]
     L --> N[DataFrame<br>list_float]
@@ -23,7 +23,7 @@ graph LR
 
     C --> O[JSON Caching]
     C --> P[Modal Deploy TGI]
-    O --> Q[OpenAI API]
+    O --> Q[OpenAI Compatible API]
     P --> R[Remote Inference TGI]
     Q --> S[JSON Caching]
     R --> T2[DataFrame<br>struct]
@@ -33,9 +33,9 @@ graph LR
     S --> A2
     S --> E2
 
-    F --> U[Deploy Train Server]
+    F --> U[Modal Deploy TrainSK]
     U --> V[Save in Model Volume]
-    V --> W[Deploy Inference Server]
+    V --> W[Modal Deploy PredictSK]
     W --> X[cynde.functional.predict.predict]
     X --> E2
 ```
