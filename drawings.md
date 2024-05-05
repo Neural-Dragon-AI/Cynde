@@ -1,4 +1,4 @@
-Absolutely! Let's update the mermaid graph to remove the Meta's LLaMA reference, add locally hosted OpenAI servers, and provide more details on Modal autoscaling and deployment. Here's the updated mermaid graph:
+Absolutely! Let's integrate the deployment columns, add a reference to gradient boosted trees (scikit-learn) in data processing, and include a reference to structured generation via Pydantic with Outlines. Here's the updated mermaid graph:
 
 ```mermaid
 graph TD
@@ -6,25 +6,25 @@ graph TD
     B --> C[OpenAI API-Compatible Servers]
     C --> D[Cloud-Hosted]
     C --> E[Locally-Hosted]
-    B --> F[Self-Hosted Deployments]
-    F --> G[Hugging Face TGI/TEI]
+    B --> F[Self-Hosted Deployments with Modal]
+    F --> G[Hugging Face TGI]
+    F --> H[Hugging Face TEI]
     
-    A --> H[Data Processing]
-    H --> I[Polars DataFrames]
-    H --> J[Pydantic Models]
+    A --> I[Data Processing]
+    I --> J[Polars DataFrames]
+    I --> K[Pydantic Models]
+    I --> L[Gradient Boosted Trees (scikit-learn)]
     
-    A --> K[Functional API]
-    K --> L[cynde.functional.embed]
-    L --> M[Embedding Generation]
-    K --> N[cynde.functional.generate]
-    N --> O[Structured Text Generation]
-    K --> P[cynde.functional.predict]
-    P --> Q[Predictive Modeling]
+    A --> M[Functional API]
+    M --> N[cynde.functional.embed]
+    N --> O[Embedding Generation]
+    M --> P[cynde.functional.generate]
+    P --> Q[Structured Text Generation]
+    Q --> R[Pydantic with Outlines]
+    M --> S[cynde.functional.predict]
+    S --> T[Predictive Modeling]
     
-    A --> R[Deployment]
-    R --> S[Serverless]
-    S --> T[Modal]
-    T --> U[Autoscaling]
+    F --> U[Autoscaling]
     U --> V[GPU Workload]
     U --> W[CPU Workload]
     
@@ -35,20 +35,26 @@ graph TD
 In this updated mermaid graph:
 
 1. LLM Integration:
-   - The OpenAI API-Compatible Servers are now divided into Cloud-Hosted and Locally-Hosted options, providing flexibility for users to choose between using cloud-based OpenAI servers or running their own locally-hosted instances.
-   - The Self-Hosted Deployments now only include Hugging Face TGI/TEI, emphasizing the framework's compatibility with popular open-source models and inference servers.
+   - The OpenAI API-Compatible Servers remain divided into Cloud-Hosted and Locally-Hosted options.
+   - The Self-Hosted Deployments are now explicitly linked to Modal, indicating that Cynde uses Modal for deploying self-hosted instances of Hugging Face TGI and TEI.
 
-2. Data Processing and Functional API remain the same as in the previous graph.
+2. Data Processing:
+   - Polars DataFrames and Pydantic Models remain as key components for data processing and validation.
+   - A new component, Gradient Boosted Trees (scikit-learn), has been added to highlight Cynde's integration with scikit-learn for gradient boosting algorithms in predictive modeling tasks.
 
-3. Deployment:
-   - The Serverless deployment option is now explicitly linked to Modal.
-   - Under Modal, we have added Autoscaling to highlight Modal's capability to automatically scale the workload based on demand.
-   - Autoscaling is further divided into GPU Workload and CPU Workload, indicating that Modal can efficiently scale both GPU-intensive tasks (such as LLM inference) and CPU-intensive tasks (such as data processing and preprocessing).
+3. Functional API:
+   - The `cynde.functional.embed` and `cynde.functional.predict` modules remain the same.
+   - Under the `cynde.functional.generate` module, Structured Text Generation is now linked to Pydantic with Outlines, indicating the use of Pydantic models in combination with the Outlines library for generating structured text outputs.
 
-4. Observability remains the same, with Logfire Integration for monitoring and analyzing the runtime behavior and performance of Cynde workflows.
+4. Deployment:
+   - The Autoscaling component is now directly connected to the Self-Hosted Deployments with Modal, emphasizing that Modal handles the autoscaling of both GPU and CPU workloads for the self-hosted TGI and TEI instances.
 
-This updated mermaid graph provides a more accurate and detailed representation of the Cynde framework's architecture and capabilities. It emphasizes the flexibility in LLM integration, with both cloud-hosted and locally-hosted OpenAI API-compatible servers, as well as self-hosted deployments using Hugging Face TGI/TEI.
+5. Observability remains the same, with Logfire Integration for monitoring and analyzing the runtime behavior and performance of Cynde workflows.
 
-The graph also highlights the serverless deployment option using Modal, with a focus on Modal's autoscaling capabilities for efficiently handling both GPU and CPU workloads. This ensures that Cynde can seamlessly scale to accommodate varying demands and workload sizes without manual intervention.
+This updated mermaid graph provides a more streamlined and integrated view of the Cynde framework's architecture. It consolidates the deployment options, highlighting the use of Modal for self-hosted deployments of Hugging Face TGI and TEI, along with Modal's autoscaling capabilities.
 
-By presenting the framework in this manner, the mermaid graph helps users better understand the deployment and scaling options available in Cynde, and how they can leverage Modal's autoscaling features to build scalable and cost-effective LLM-powered applications.
+The graph also introduces gradient boosted trees (scikit-learn) as a key component in the data processing pipeline, showcasing Cynde's integration with popular machine learning libraries for predictive modeling tasks.
+
+Furthermore, the reference to structured text generation using Pydantic with Outlines emphasizes Cynde's capability to generate structured outputs based on predefined Pydantic models, leveraging the Outlines library for constrained generation.
+
+By presenting the framework in this integrated manner, the mermaid graph provides a clearer understanding of how the different components of Cynde work together to enable scalable, flexible, and structured LLM-powered data processing workflows.
