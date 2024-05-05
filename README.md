@@ -8,6 +8,37 @@ Hard refactor ongoing, shamelessly pushing to main for interactive debugging wit
 
 Cynde is a Python framework designed to streamline the integration of large language models (LLMs) with the modern data science stack, such as Polars DataFrames and decision tree ensembles, for efficient and scalable data processing. The framework provides a set of modular and composable tools for tasks such as embedding generation, structured text generation, and predictive modeling, with a focus on leveraging the power of LLMs and serverless computing.
 
+
+```mermaid
+graph TD
+
+    A[Cynde Framework] --> B[Data Processing]
+    
+    B --> E[Gradient Boosted Trees SKLearn]
+    A --> P[Serverless Deployments with Modal]
+    F[Autoscaling] --> P
+    P --> F
+    G[CPU Workload] --> F
+    E --> G
+    M[GPU Workload] --> F
+
+    B --> H[LLM Integration]
+    H --> I[OpenAI API-Compatible Servers]
+    I --> J[Cloud-Hosted]
+    I --> K[Locally-Hosted]
+    H --> N[Hugging Face TGI]
+  
+    H --> O[Hugging Face TEI]
+    N --> M
+    O --> M
+
+
+    A --> Y[Observability]
+    Y --> Z[Logfire Integration]
+
+```
+
+
 Cynde offers two main behavioral patterns for interacting with LLMs:
 
 1. Compatibility with OpenAI API-compatible servers, including popular LLMs like OpenAI's GPT models and self-hosted solutions like LMStudio, llama.cpp, or Ollama.
