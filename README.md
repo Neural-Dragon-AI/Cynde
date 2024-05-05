@@ -82,7 +82,7 @@ graph LR
     S --> E2
 
     F --> U[Modal Deploy TrainSK]
-    U --> V[Save in Model Volume]
+    U --> V[Save in Modal Volume]
     V --> W[Modal Deploy PredictSK]
     F --> X[cynde.functional.predict.predict]
     W --> Z[Remote Inference PredictSK]
