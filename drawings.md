@@ -11,8 +11,6 @@ graph LR
     D --> F
     G[DataFrame<br>list_float] --> F
 
-    H[Pydantic Model] --> C
-
     B --> N[DataFrame<br>list_float]
 
     C --> T2[DataFrame<br>struct]

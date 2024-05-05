@@ -22,6 +22,33 @@ Cynde is a Python framework designed to streamline the integration of large lang
 6. **Structured Text Generation**: The `cynde.functional.generate` module offers functionality for generating structured text using LLMs based on specified instructions and output schemas. It leverages the TGI server and the Outlines library for constrained text generation, with a focus on generating typed objects.
 
 7. **Predictive Modeling**: The `cynde.functional.predict` module enables predictive modeling tasks, focusing on categorical variables. It includes tools for feature engineering, model training, and evaluation, with support for distributed nested cross-validation of tree ensembles.
+```mermaid
+graph LR
+    A[DataFrame<br>str] --> B[cynde.functional.embed]
+    A --> C[cynde.functional.generate]
+    D[DataFrame<br>float] --> C
+    E[DataFrame<br>enum] --> C
+    T[DataFrame<br>struct] --> C
+    E --> F[cynde.functional.predict.train]
+    D --> F
+    G[DataFrame<br>list_float] --> F
+
+    B --> N[DataFrame<br>list_float]
+
+    C --> T2[DataFrame<br>struct]
+    C --> A2[DataFrame<br>str]
+    C --> E2[DataFrame<br>enum]
+
+    F --> X[cynde.functional.predict.predict]
+    X --> E2
+```
+
+
+## Serverless Deployment and Autoscaling
+
+Cynde leverages Modal for serverless deployment and autoscaling of LLM processing. The framework provides deployment scripts for spinning up TGI and TEI servers on Modal, allowing for efficient and scalable processing of text generation and embedding tasks.
+
+The general design pattern is to push local data to the cloud, where the embedding and text generation servers are deployed. The framework maps the generation and embedding jobs over rows of the DataFrame, with autoscaling to handle large workloads.
 
 ```mermaid
 graph LR
@@ -64,12 +91,6 @@ graph LR
     X --> W
     Z --> E2
 ```
-
-## Serverless Deployment and Autoscaling
-
-Cynde leverages Modal for serverless deployment and autoscaling of LLM processing. The framework provides deployment scripts for spinning up TGI and TEI servers on Modal, allowing for efficient and scalable processing of text generation and embedding tasks.
-
-The general design pattern is to push local data to the cloud, where the embedding and text generation servers are deployed. The framework maps the generation and embedding jobs over rows of the DataFrame, with autoscaling to handle large workloads.
 
 ## Refactoring Steps
 
