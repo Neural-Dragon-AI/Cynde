@@ -1,52 +1,54 @@
-Certainly! Let's take a step back and redesign the mermaid graph to better represent the structure and components of the Cynde framework. Here's a proposed new mermaid graph:
+Absolutely! Let's update the mermaid graph to remove the Meta's LLaMA reference, add locally hosted OpenAI servers, and provide more details on Modal autoscaling and deployment. Here's the updated mermaid graph:
 
 ```mermaid
 graph TD
     A[Cynde Framework] --> B[LLM Integration]
     B --> C[OpenAI API-Compatible Servers]
-    B --> D[Self-Hosted Deployments]
-    D --> E[Meta's LLaMA]
-    D --> F[Hugging Face TGI/TEI]
+    C --> D[Cloud-Hosted]
+    C --> E[Locally-Hosted]
+    B --> F[Self-Hosted Deployments]
+    F --> G[Hugging Face TGI/TEI]
     
-    A --> G[Data Processing]
-    G --> H[Polars DataFrames]
-    G --> I[Pydantic Models]
+    A --> H[Data Processing]
+    H --> I[Polars DataFrames]
+    H --> J[Pydantic Models]
     
-    A --> J[Functional API]
-    J --> K[cynde.functional.embed]
-    K --> L[Embedding Generation]
-    J --> M[cynde.functional.generate]
-    M --> N[Structured Text Generation]
-    J --> O[cynde.functional.predict]
-    O --> P[Predictive Modeling]
+    A --> K[Functional API]
+    K --> L[cynde.functional.embed]
+    L --> M[Embedding Generation]
+    K --> N[cynde.functional.generate]
+    N --> O[Structured Text Generation]
+    K --> P[cynde.functional.predict]
+    P --> Q[Predictive Modeling]
     
-    A --> Q[Deployment]
-    Q --> R[Serverless]
-    R --> S[Modal]
+    A --> R[Deployment]
+    R --> S[Serverless]
+    S --> T[Modal]
+    T --> U[Autoscaling]
+    U --> V[GPU Workload]
+    U --> W[CPU Workload]
     
-    A --> T[Observability]
-    T --> U[Logfire Integration]
+    A --> X[Observability]
+    X --> Y[Logfire Integration]
 ```
 
-In this redesigned mermaid graph, we have:
+In this updated mermaid graph:
 
-1. The Cynde Framework at the center, with arrows pointing to its main components.
+1. LLM Integration:
+   - The OpenAI API-Compatible Servers are now divided into Cloud-Hosted and Locally-Hosted options, providing flexibility for users to choose between using cloud-based OpenAI servers or running their own locally-hosted instances.
+   - The Self-Hosted Deployments now only include Hugging Face TGI/TEI, emphasizing the framework's compatibility with popular open-source models and inference servers.
 
-2. LLM Integration: This component represents the integration with different LLM backends. It is further divided into OpenAI API-Compatible Servers and Self-Hosted Deployments, with the latter including Meta's LLaMA and Hugging Face TGI/TEI.
+2. Data Processing and Functional API remain the same as in the previous graph.
 
-3. Data Processing: This component represents the data processing capabilities of Cynde, which leverage Polars DataFrames for efficient data manipulation and Pydantic Models for data validation and schema definition.
+3. Deployment:
+   - The Serverless deployment option is now explicitly linked to Modal.
+   - Under Modal, we have added Autoscaling to highlight Modal's capability to automatically scale the workload based on demand.
+   - Autoscaling is further divided into GPU Workload and CPU Workload, indicating that Modal can efficiently scale both GPU-intensive tasks (such as LLM inference) and CPU-intensive tasks (such as data processing and preprocessing).
 
-4. Functional API: This component represents the core functional modules of Cynde. It is divided into three submodules:
-   - `cynde.functional.embed`: Responsible for embedding generation.
-   - `cynde.functional.generate`: Responsible for structured text generation.
-   - `cynde.functional.predict`: Responsible for predictive modeling.
+4. Observability remains the same, with Logfire Integration for monitoring and analyzing the runtime behavior and performance of Cynde workflows.
 
-5. Deployment: This component represents the deployment options for Cynde, focusing on serverless deployment using Modal.
+This updated mermaid graph provides a more accurate and detailed representation of the Cynde framework's architecture and capabilities. It emphasizes the flexibility in LLM integration, with both cloud-hosted and locally-hosted OpenAI API-compatible servers, as well as self-hosted deployments using Hugging Face TGI/TEI.
 
-6. Observability: This component represents the observability and monitoring capabilities of Cynde, with Logfire integration for capturing and analyzing runtime behavior and performance metrics.
+The graph also highlights the serverless deployment option using Modal, with a focus on Modal's autoscaling capabilities for efficiently handling both GPU and CPU workloads. This ensures that Cynde can seamlessly scale to accommodate varying demands and workload sizes without manual intervention.
 
-This redesigned mermaid graph provides a more structured and hierarchical representation of the Cynde framework, clearly separating the main components and their subcomponents. It emphasizes the modular nature of the framework, with the Functional API at the core, supported by LLM Integration, Data Processing, Deployment, and Observability components.
-
-The graph also highlights the specific technologies and libraries used within each component, such as Polars DataFrames and Pydantic Models for data processing, Modal for serverless deployment, and Logfire for observability.
-
-By presenting the framework in this organized manner, the mermaid graph helps users better understand the architecture and capabilities of Cynde, and how the different components work together to enable scalable and flexible LLM-powered data processing workflows.
+By presenting the framework in this manner, the mermaid graph helps users better understand the deployment and scaling options available in Cynde, and how they can leverage Modal's autoscaling features to build scalable and cost-effective LLM-powered applications.
