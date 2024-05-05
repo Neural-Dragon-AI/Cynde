@@ -215,6 +215,41 @@ validated_df = validate_df(out_df, OutputSchema)
 
 Refactor the `cynde.functional.generate` and `cynde.functional.embed` modules to use a higher-level Pydantic config that specifies the backend to use (e.g., OpenAI API, Modal deployment). This will provide a more consistent and flexible interface for users.
 
+Example usage for embedding generation with a unified API:
+
+```python
+from cynde.functional.embed import embed_column
+from cynde.functional.embed.types import EmbedConfig
+
+embed_cfg = EmbedConfig(
+    column="text",
+    backend="modal",
+    modal_endpoint="example-tei-endpoint"
+)
+
+embedded_df = embed_column(df, embed_cfg)
+```
+
+Example usage for structured text generation with a unified API:
+
+```python
+from cynde.functional.generate import generate_column, validate_df
+from cynde.functional.generate.types import InstructionConfig
+
+instruction = InstructionConfig(
+    system_prompt="Generate a JSON object describing the following text:",
+    column="text",
+    output_schema=OutputSchema.model_json_schema(),
+    backend="openai",
+    api_endpoint="https://api.openai.com/v1/completions",
+    api_key="your_api_key",
+    model="text-davinci-003"
+)
+
+out_df = generate_column(df, instruction)
+validated_df = validate_df(out_df, OutputSchema)
+```
+
 ### Refactor Predict Module
 
 Refactor the `cynde.functional.predict` module to work through the Modal deployment invocation instead of the current `main()` function. Use Modal volumes for handling training data instead of the current mount system, allowing for more efficient data handling and reduced networking overhead.
@@ -243,21 +278,108 @@ By using Modal volumes for handling training data, the refactored predict module
 
 Extend the Modal deployment to include a storage and inference endpoint for the gradient boosting trees trained in the `train_cv` endpoint. This will enable seamless model persistence and serving, allowing for efficient model storage and retrieval during inference.
 
-## Pipeline with Remote References
+Example usage for model storage and inference with the added endpoints:
+
+```python
+from cynde.functional.predict import train_predict_pipeline, predict_with_stored_model
+from cynde.functional.predict.types import PredictConfig, InferenceConfig
+
+predict_cfg = PredictConfig(
+    input_config=input_config,
+    cv_config=cv_config,
+    classifiers_config=classifiers_config,
+    modal_endpoint="example-predict-endpoint",
+    storage_endpoint="example-storage-endpoint"
+)
+
+results_df = train_predict_pipeline(df, predict_cfg)
+
+inference_cfg = InferenceConfig(
+    model_name="example-model",
+    modal_endpoint="example-inference-endpoint"
+)
+
+predictions_df = predict_with_stored_model(df, inference_cfg)
+```
+
+In this example, the `train_predict_pipeline` function is extended to include a `storage_endpoint` parameter in the `PredictConfig` Pydantic model. This endpoint is used to store the trained models in a Modal volume for later retrieval.
+
+The `predict_with_stored_model` function is introduced to perform inference using a stored model. It takes an `InferenceConfig` Pydantic model as input, which specifies the name of the stored model and the Modal endpoint for the inference service.
+
+By adding storage and inference endpoints to the Modal deployment, Cynde enables seamless model persistence and serving, making it easier to manage and deploy trained models in production environments.
+
+These refactoring steps aim to improve the consistency, flexibility, and efficiency of the Cynde framework, while leveraging the power of serverless computing and optimized LLM inference through Modal and TGI/TEI servers. By providing a unified API for embedding generation and structured text generation, as well as optimized data handling and model storage for predictive modeling, Cynde empowers users to build scalable and performant LLM-powered applications with ease.
+
+
+## Pipeline with Remote References and Future Steps
 
 The next step in the evolution of Cynde is to introduce a pipeline mechanism that allows for the composition of methods through eager invocation from the local machine, where the original data resides. Each step in the pipeline would return a reference to the data that will be used as input for the next step.
 
-To achieve this, we propose introducing a dummy class that represents a reference to a (potentially) remote DataFrame that does not exist in advance. This class would encapsulate the metadata required to locate and load the actual data when needed.
+To achieve this, we propose introducing a `RemoteDataFrame` class that represents a reference to a (potentially) remote DataFrame that does not exist in advance. This class would encapsulate the metadata required to locate and load the actual data when needed.
 
 Here's how this pipeline mechanism would work:
 
 1. Each step in the pipeline is triggered from the local machine, where the original data resides.
-2. When a step is executed, it returns a dummy object that represents the output DataFrame, rather than the actual data itself.
-3. This dummy object contains metadata about the expected remote location and name of the output DataFrame.
-4. When the dummy object is passed as input to the next step in the pipeline, the Modal execution environment uses the metadata to locate and load the actual remote DataFrame.
+2. When a step is executed, it returns a `RemoteDataFrame` object that represents the output DataFrame, rather than the actual data itself.
+3. The `RemoteDataFrame` object contains metadata about the expected remote location and name of the output DataFrame.
+4. When the `RemoteDataFrame` object is passed as input to the next step in the pipeline, the Modal execution environment uses the metadata to locate and load the actual remote DataFrame.
 
 By leveraging this remote reference mechanism, Cynde can enable the composition of complex data processing pipelines that span multiple execution environments (e.g., local machine, Modal) without the need to transfer data back and forth between steps. This approach also allows for lazy evaluation and optimization of the pipeline, as the actual data is only loaded and processed when needed.
 
-To implement this pipeline mechanism, we will need to define a `RemoteDataFrame` class that encapsulates the metadata required to locate and load the remote data. This class will provide methods for saving and loading data to and from remote storage, as well as for specifying the expected schema and transformations applied to the data.
+To implement this pipeline mechanism, we will need to define the `RemoteDataFrame` class with methods for saving and loading data to and from remote storage, as well as for specifying the expected schema and transformations applied to the data.
 
-By integrating this remote reference mechanism with the refactored `cynde.functional` modules and the Modal deployment infrastructure, Cynde will provide a powerful and flexible framework for composing and executing complex data processing pipelines that leverage the power of LLMs and serverless computing.
+### Initializing RemoteDataFrame from Hugging Face Datasets
+
+One potential extension of the `RemoteDataFrame` concept is the ability to initialize a remote DataFrame directly from a Hugging Face dataset. This would allow users to seamlessly integrate popular datasets into their Cynde pipelines without the need for manual data loading and preprocessing.
+
+Example usage:
+
+```python
+from cynde.data import RemoteDataFrame
+
+remote_df = RemoteDataFrame.from_huggingface_dataset("imdb")
+```
+
+In this example, the `from_huggingface_dataset` class method is used to initialize a `RemoteDataFrame` object directly from the IMDB dataset hosted on Hugging Face. The method would handle the necessary data loading, preprocessing, and storage in a remote location, making it readily available for use in a Cynde pipeline.
+
+### Cross-Validation Safe Compositionality
+
+When composing complex pipelines that involve multiple steps of data transformation and modeling, it's crucial to ensure that the cross-validation process remains valid and unbiased. This becomes particularly important when dealing with pipelines that include steps where information from multiple rows is aggregated or summarized, such as when using LLMs to generate features based on multiple input rows.
+
+In such cases, we need to be careful about the cross-row dependencies introduced by these aggregation steps. For example, if we generate a summary feature using an LLM that takes multiple rows as input, and then use that summary as input to a classifier after embedding, we need to ensure that the rows used to generate the summary do not end up in the test set during cross-validation. Otherwise, we risk introducing data leakage and biasing our evaluation metrics.
+
+To address this challenge, we propose developing a row dependency graph for each column in the DataFrame. This graph would capture the dependencies between rows introduced by various pipeline steps, allowing us to reason about the safety of compositions in cross-validation contexts.
+
+By extending our cross-validation mechanisms to take into account these row dependencies, we can enable more advanced cross-validation schemes like combinatorial purged cross-validation (CPCV) and expand their applicability beyond time-series settings to scenarios that typically require handcrafted definitions of cross-dependencies across rows.
+
+Example usage:
+
+```python
+from cynde.pipeline import Pipeline
+from cynde.functional.generate import generate_column
+from cynde.functional.embed import embed_column
+from cynde.functional.predict import train_predict_pipeline
+
+pipeline = Pipeline(
+    steps=[
+        ("generate_summary", generate_column(instruction_config)),
+        ("embed_summary", embed_column(embed_config)),
+        ("predict", train_predict_pipeline(predict_config))
+    ],
+    cv_config=CPCVConfig(groups=["user_id"], n_test_groups=2, n_train_groups=3)
+)
+
+results_df = pipeline.run(df)
+```
+
+In this example, we define a pipeline that includes a summary generation step using an LLM, followed by embedding the generated summaries and using them as input to a predictive modeling step. By specifying a `CPCVConfig` object in the pipeline constructor, we indicate that the cross-validation process should take into account the row dependencies introduced by the summary generation step, ensuring that the evaluation remains unbiased.
+
+### Monitoring Deployed Pipelines with Logfire
+
+As Cynde pipelines are deployed and executed in a fully remote manner using Modal, it becomes increasingly important to have visibility into their runtime behavior and performance. While Logfire currently integrates with Cynde to provide observability into the local execution of pipelines, extending this integration to monitor the deployed behavior of fully remote pipelines inside Modal would be a valuable addition.
+
+However, due to current limitations in Modal's support for integrating third-party monitoring solutions, this is not yet possible. As Modal's capabilities evolve, we plan to explore ways to enable Logfire monitoring of deployed Cynde pipelines from within the Modal environment.
+
+In the meantime, users can still leverage Logfire's powerful observability features to gain insights into the local development and testing of their Cynde pipelines, helping them identify performance bottlenecks, optimize resource utilization, and ensure the reliability of their workflows before deployment.
+
+By integrating remote references, initializing DataFrames from Hugging Face datasets, ensuring cross-validation safe compositionality, and extending observability to deployed pipelines, Cynde aims to provide a powerful and flexible framework for building and deploying LLM-powered data processing workflows at scale. These future steps will further enhance the framework's capabilities and empower users to tackle a wide range of real-world applications with ease and confidence.
