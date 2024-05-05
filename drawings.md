@@ -21,8 +21,8 @@ graph TD
     H --> N[Hugging Face TGI]
    
     H --> O[Hugging Face TEI]
-    N --> G
-    O --> G
+    N --> M
+    O --> M
 
 
     A --> Y[Observability]
