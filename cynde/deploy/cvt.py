@@ -40,6 +40,9 @@ def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
         save_name = feature_set.joined_names()
         save_path = os.path.join(save_folder, f"{save_name}.parquet")
         feature_set_df.write_parquet(save_path)
+        print("saved the parquet file at ", save_path)
+        vol.commit()
+        print("committed the volume")
 
 
 #define the distributed classification method

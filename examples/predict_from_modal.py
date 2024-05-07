@@ -41,26 +41,26 @@ df = convert_utf8_to_enum(df, threshold=0.2)
 df = check_add_cv_index(df,strict=False)
 
 input_config = InputConfig.model_validate(input_config_data,context={"df":df})
-print("Input config:")
-print(input_config)
+# print("Input config:")
+# print(input_config)
 
 
 classifiers_config = ClassifierConfig(classifiers=[RandomForestClassifierConfig(n_estimators=100),RandomForestClassifierConfig(n_estimators=500)])
-print("Classifiers config:")
-print(classifiers_config)
+# print("Classifiers config:")
+# print(classifiers_config)
 groups = ["target"]
 cv_config = CVConfig(inner= StratifiedConfig(groups=groups,k=5),
                      inner_replicas=1,
                      outer = StratifiedConfig(groups=groups,k=5),
                         outer_replicas=1)
-print("CV config:")
-print(cv_config)
+# print("CV config:")
+# print(cv_config)
 remote_preprocess = modal.Function.lookup("distributed_cv", "preprocess_inputs_distributed")
 # validate_preprocessed_inputs(input_config)
 
 print(df.columns)
 task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
 
-remote_preprocess.map(df, input_config)
+remote_preprocess.remote(df, input_config)
 
-train_nested_cv_distributed(df,task)
+# train_nested_cv_distributed(df,task)
