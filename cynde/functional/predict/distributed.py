@@ -2,12 +2,15 @@ import modal
 from modal import Image
 from typing import Tuple
 from cynde.functional.predict.classify import predict_pipeline
-from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig
+from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
 from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index
 from cynde.functional.predict.cv import train_test_val,generate_nested_cv
 from cynde.functional.predict.classify import create_pipeline ,evaluate_model
+import os
 
+from modal import Volume
 
+vol = Volume.from_name("cynde_cv", create_if_missing=True)
 
 app = modal.App("distributed_cv")
     
@@ -24,6 +27,20 @@ with datascience_image.imports():
     import polars as pl
     import sklearn as sk
     import cynde as cy
+
+
+@app.function(image=datascience_image,volumes={"/cynde_mount": vol})
+def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
+    """ Saves .parquet for each feature set in input_config """
+    save_folder = input_config.remote_folder
+    os.makedirs(save_folder,exist_ok=True)
+    for feature_set in input_config.feature_sets:
+        column_names = feature_set.column_names()
+        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
+        print(f"selected columns: {feature_set_df.columns}")
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(save_folder, f"{save_name}.parquet")
+        feature_set_df.write_parquet(save_path)
 
 
 #define the distributed classification method

@@ -43,11 +43,6 @@ def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
         column_names = feature_set.column_names()
         feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
         print(f"selected columns: {feature_set_df.columns}")
-        #explodes all the embedding columns into list of columns
-        # for feature in feature_set.embeddings:
-        #     print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
-        #     feature_set_df = map_list_to_cols(feature_set_df,feature.column_name)
-
         save_name = feature_set.joined_names()
         save_path = os.path.join(save_folder, f"{save_name}.parquet")
         feature_set_df.write_parquet(save_path)
