@@ -55,12 +55,10 @@ cv_config = CVConfig(inner= StratifiedConfig(groups=groups,k=5),
                         outer_replicas=1)
 # print("CV config:")
 # print(cv_config)
-remote_preprocess = modal.Function.lookup("distributed_cv", "preprocess_inputs_distributed")
 # validate_preprocessed_inputs(input_config)
 
 # print(df.columns)
 task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
 
-remote_preprocess.remote(df, input_config)
 
-train_nested_cv_distributed(df,task)
+results = train_nested_cv_distributed(df,task)

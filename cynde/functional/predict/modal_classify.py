@@ -18,6 +18,9 @@ def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl
     df = check_add_cv_index(df,strict=True)
     
     f = modal.Function.lookup(task_config.modal_endpoint, "predict_pipeline_distributed")
+    r = modal.Function.lookup(task_config.modal_endpoint, "preprocess_inputs_distributed")
+    
+    r.remote(df, task_config.input_config)
     
     #extract the subset of columns necessary for constructing the cross validation folds 
     unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
