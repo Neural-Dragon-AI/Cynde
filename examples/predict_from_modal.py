@@ -32,7 +32,7 @@ feature_set_large_data = {"embeddings":[{"column_name":"conversations_text-embed
 input_config_data = {"feature_sets":[feature_set_small_data,feature_set_large_data],
                         "target_column":"target",
                         "save_folder":"C:/Users/Tommaso/Documents/Dev/Cynde/cynde_mount/",
-                        "remote_folder":"/root/cynde_mount"}
+                        "remote_folder":"/cynde_mount"}
 
 
 
@@ -58,9 +58,9 @@ cv_config = CVConfig(inner= StratifiedConfig(groups=groups,k=5),
 remote_preprocess = modal.Function.lookup("distributed_cv", "preprocess_inputs_distributed")
 # validate_preprocessed_inputs(input_config)
 
-print(df.columns)
+# print(df.columns)
 task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
 
 remote_preprocess.remote(df, input_config)
 
-# train_nested_cv_distributed(df,task)
+train_nested_cv_distributed(df,task)
