@@ -31,3 +31,4 @@ def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl
     for result in all_results:
         re_validated_results.append(PipelineResults.model_validate(result))
     print("Finished!! " ,len(all_results))
+    return re_validated_results
