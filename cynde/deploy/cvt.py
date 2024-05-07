@@ -16,7 +16,7 @@ app = modal.App("distributed_cv")
 datascience_image = (
     Image.debian_slim(python_version="3.12.1")
     .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    .pip_install("polars","scikit-learn","openai","tiktoken", force_build=True)
     
     .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
     .env({"CYNDE_DIR": "/opt/cynde"})
@@ -41,8 +41,8 @@ def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
         save_path = os.path.join(save_folder, f"{save_name}.parquet")
         feature_set_df.write_parquet(save_path)
         print("saved the parquet file at ", save_path)
-        vol.commit()
-        print("committed the volume")
+    vol.commit()
+    print("committed the volume")
 
 
 #define the distributed classification method
