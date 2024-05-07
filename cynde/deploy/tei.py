@@ -111,7 +111,7 @@ class Model:
         import httpx
 
         try:
-            response = await self.client.post("/embed", json=request.dict())
+            response = await self.client.post("/embed", json=request.model_dump())
             response.raise_for_status()  # Raise an exception for 4xx or 5xx status codes
             embeddings = np.array(response.json())
             return embeddings
