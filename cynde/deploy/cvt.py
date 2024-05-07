@@ -1,15 +1,14 @@
+from modal import Volume
 import modal
 from modal import Image
 from typing import Tuple
-from cynde.functional.predict.classify import predict_pipeline
 from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
-from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index
-from cynde.functional.predict.cv import train_test_val,generate_nested_cv
+from cynde.functional.predict.preprocess import load_preprocessed_features
+from cynde.functional.predict.cv import train_test_val
 from cynde.functional.predict.classify import create_pipeline ,evaluate_model
 import os
 
 from modal import Volume
-
 vol = Volume.from_name("cynde_cv", create_if_missing=True)
 
 app = modal.App("distributed_cv")
@@ -44,7 +43,8 @@ def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
 
 
 #define the distributed classification method
-@app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
+# @app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
+@app.function(image=datascience_image,volumes={"/cynde_mount": vol})
 def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
     input_config = pipeline_input.input_config
     feature_set = input_config.feature_sets[pipeline_input.feature_index]
@@ -67,27 +67,3 @@ def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataF
                            val_mcc=val_mcc,
                            test_accuracy=test_accuracy,
                            test_mcc=test_mcc)
-
-def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl.DataFrame:
-    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
-    1) Validate the input_config and check if the preprocessed features are present locally 
-    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
-    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
-    4) collect and aggregate the results locally and save and return the results
-    """
-    #validate the inputs and check if the preprocessed features are present locally
-    df = check_add_cv_index(df,strict=True)
-    
-    
-    #extract the subset of columns necessary for constructing the cross validation folds 
-    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
-    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
-
-    nested_cv = generate_nested_cv(df_idx,task_config)
-    all_results = []
-    for result in predict_pipeline_distributed.map(list(nested_cv)):
-        all_results.append(result)
-    re_validated_results = []
-    for result in all_results:
-        re_validated_results.append(PipelineResults.model_validate(result))
-    print("Finished!! " ,len(all_results))

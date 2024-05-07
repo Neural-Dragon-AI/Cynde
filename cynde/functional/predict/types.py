@@ -126,7 +126,7 @@ class FeatureSet(BaseModel):
 class InputConfig(BaseModel):
     feature_sets: List[FeatureSet]
     target_column: str = Field("target", description="The target column to predict.")
-    remote_folder: str = Field("/root/cynde_mount", description="The remote folder to save the preprocessed features.")
+    remote_folder: str = Field("/cynde_mount", description="The remote folder to save the preprocessed features.")
 
     save_folder: Optional[str] = None
 
@@ -248,6 +248,7 @@ class PredictConfig(BaseModel):
     cv_config: CVConfig
     input_config: InputConfig
     classifiers_config: ClassifierConfig
+    modal_endpoint: str = Field("distributed_cv", description="The modal endpoint to use for training each individual fold")
 
 class CVSummary(BaseModel):
     cv_config: Union[KFoldConfig,StratifiedConfig,PurgedConfig] = Field(description="The cross-validation configuration. Required for the summary.")
