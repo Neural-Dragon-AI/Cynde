@@ -1,7 +1,7 @@
 import polars as pl
 import numpy as np
 from typing import Optional, Tuple
-from cynde.functional.predict.types import InputConfig,FeatureSet
+from cynde.functional.train.types import InputConfig,FeatureSet
 import os
 
 def convert_utf8_to_enum(df: pl.DataFrame, threshold: float = 0.2) -> pl.DataFrame:

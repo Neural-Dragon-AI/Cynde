@@ -7,9 +7,9 @@ from sklearn.pipeline import Pipeline
 import polars as pl
 from typing import Tuple
 import time
-from cynde.functional.predict.types import PipelineResults,PredictConfig,PipelineInput,FeatureSet,InputConfig,ClassifierConfig,BaseClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
-from cynde.functional.predict.cv import train_test_val,generate_nested_cv
-from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index,validate_preprocessed_inputs
+from cynde.functional.train.types import PipelineResults,PredictConfig,PipelineInput,FeatureSet,InputConfig,ClassifierConfig,BaseClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
+from cynde.functional.train.cv import train_test_val,generate_nested_cv
+from cynde.functional.train.preprocess import load_preprocessed_features,check_add_cv_index,validate_preprocessed_inputs
 
 def create_pipeline(df: pl.DataFrame, feature_set: FeatureSet, classifier_config: BaseClassifierConfig) -> Pipeline:
     """ maybne the df.schema is enough and we do not need to pass the whole df """
@@ -69,7 +69,7 @@ def evaluate_model(pipeline: Pipeline, X, y):
     return pred_df,accuracy, mcc
 
 
-def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+def train_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
     feature_set = input_config.feature_sets[pipeline_input.feature_index]
     df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index)
     print(df_fold)
@@ -114,7 +114,7 @@ def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
     for pipeline_input in nested_cv:
         start = time.time()
         print(f"Training pipeline with classifier {pipeline_input.cls_config.classifier_name} on feature set {task_config.input_config.feature_sets[pipeline_input.feature_index]}")
-        results = predict_pipeline(task_config.input_config,pipeline_input)
+        results = train_pipeline(task_config.input_config,pipeline_input)
         print(results)
         end = time.time()
         print(f"Training pipeline took {end-start} seconds")

@@ -2,10 +2,10 @@ from modal import Volume
 import modal
 from modal import Image
 from typing import Tuple
-from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
-from cynde.functional.predict.preprocess import load_preprocessed_features
-from cynde.functional.predict.cv import train_test_val
-from cynde.functional.predict.classify import create_pipeline ,evaluate_model
+from cynde.functional.train.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
+from cynde.functional.train.preprocess import load_preprocessed_features
+from cynde.functional.train.cv import train_test_val
+from cynde.functional.train.train import create_pipeline ,evaluate_model
 import os
 
 from modal import Volume
@@ -48,7 +48,7 @@ def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
 #define the distributed classification method
 # @app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
 @app.function(image=datascience_image,volumes={"/cynde_mount": vol})
-def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+def train_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
     input_config = pipeline_input.input_config
     feature_set = input_config.feature_sets[pipeline_input.feature_index]
     df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index,remote=True)

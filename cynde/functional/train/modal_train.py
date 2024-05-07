@@ -1,8 +1,8 @@
 import modal
 from typing import Tuple
-from cynde.functional.predict.types import PipelineResults,PredictConfig
-from cynde.functional.predict.preprocess import check_add_cv_index
-from cynde.functional.predict.cv import generate_nested_cv
+from cynde.functional.train.types import PipelineResults,PredictConfig
+from cynde.functional.train.preprocess import check_add_cv_index
+from cynde.functional.train.cv import generate_nested_cv
 import polars as pl
 
 
@@ -17,9 +17,9 @@ def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl
     #validate the inputs and check if the preprocessed features are present locally
     df = check_add_cv_index(df,strict=True)
     
-    f = modal.Function.lookup(task_config.modal_endpoint, "predict_pipeline_distributed")
+    f = modal.Function.lookup(task_config.modal_endpoint, "train_pipeline_distributed")
     r = modal.Function.lookup(task_config.modal_endpoint, "preprocess_inputs_distributed")
-    
+
     r.remote(df, task_config.input_config)
     
     #extract the subset of columns necessary for constructing the cross validation folds 

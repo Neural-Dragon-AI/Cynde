@@ -2,9 +2,9 @@ import polars as pl
 from pydantic import BaseModel
 from typing import List, Optional, Tuple, Generator
 import itertools
-from cynde.functional.predict.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
+from cynde.functional.train.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
 
-from cynde.functional.predict.preprocess import check_add_cv_index
+from cynde.functional.train.preprocess import check_add_cv_index
 
 
 

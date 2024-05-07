@@ -6,17 +6,17 @@ import os
 import polars as pl
 from typing import List, Optional, Tuple, Generator
 import time
-from cynde.functional.predict.types import PredictConfig, BaseClassifierConfig,StratifiedConfig,Feature,FeatureSet,NumericalFeature, CategoricalFeature,EmbeddingFeature, InputConfig, ClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig, PipelineResults, PipelineInput
-from cynde.functional.predict.preprocess import convert_utf8_to_enum, check_add_cv_index, preprocess_inputs, load_preprocessed_features,validate_preprocessed_inputs
-from cynde.functional.predict.cv import stratified_combinatorial,train_test_val,generate_nested_cv
-from cynde.functional.predict.classify import create_pipeline ,train_nested_cv,evaluate_model
+from cynde.functional.train.types import PredictConfig, BaseClassifierConfig,StratifiedConfig,Feature,FeatureSet,NumericalFeature, CategoricalFeature,EmbeddingFeature, InputConfig, ClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig, PipelineResults, PipelineInput
+from cynde.functional.train.preprocess import convert_utf8_to_enum, check_add_cv_index, preprocess_inputs, load_preprocessed_features,validate_preprocessed_inputs
+from cynde.functional.train.cv import stratified_combinatorial,train_test_val,generate_nested_cv
+from cynde.functional.train.classify import create_pipeline ,train_nested_cv,evaluate_model
 
 from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 import modal
 
 
-from cynde.functional.predict.distributed import app,datascience_image,train_nested_cv_distributed
+from cynde.functional.train.modal_train import app,datascience_image,train_nested_cv_distributed
 
 def load_minihermes_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\OpenHermes-2.5_embedded.parquet") -> pl.DataFrame:
     return pl.read_parquet(data_path)
