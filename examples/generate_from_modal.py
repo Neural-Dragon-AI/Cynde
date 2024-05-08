@@ -4,7 +4,7 @@ logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
 from typing import List
 from pydantic import BaseModel
 import polars as pl
-from cynde.functional.generate.modal_gen import generate_column,validate_df
+from cynde.functional.generate.generate_modal import generate_column,validate_df
 from cynde.functional.generate.types import InstructionConfig
 
 class Animals(BaseModel):
