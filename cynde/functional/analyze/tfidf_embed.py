@@ -3,7 +3,7 @@ from typing import List, Tuple
 import polars as pl
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from scipy.sparse import csr_matrix
-from cynde.analysis_tools.ctfidf import ClassTfidfTransformer
+from cynde.functional.analyze.ctfidf import ClassTfidfTransformer
 import re
 from time import perf_counter
 

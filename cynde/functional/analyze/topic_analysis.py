@@ -1,9 +1,34 @@
+'''
+This code is adapted From BERTopic
+https://github.com/MaartenGr/BERTopic/blob/master/LICENSE
+MIT License
+
+Copyright (c) 2023, Maarten P. Grootendorst
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
 from typing import List, Tuple, Union, Mapping, Any, Callable, Iterable
 import logging
 import hdbscan
 from umap import UMAP
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from .ctfidf import ClassTfidfTransformer
+from cynde.functional.analyze.ctfidf import ClassTfidfTransformer
 import collections
 
 from collections import defaultdict, Counter
@@ -25,8 +50,6 @@ from scipy.sparse import csr_matrix
 from sklearn.base import BaseEstimator
 from typing import Mapping, List, Tuple
 from scipy.spatial.distance import squareform
-from time import perf_counter
-
 
 class BaseRepresentation(BaseEstimator):
     """ The base representation model for fine-tuning topic representations """
@@ -90,7 +113,7 @@ class MyLogger:
 
 logger = MyLogger("WARNING")
 
-class TopicAnalysisPolars:
+class TopicAnalysis:
     def __init__(self,
                  language='english',
                  top_n_words: int = 10,
@@ -206,41 +229,39 @@ class TopicAnalysisPolars:
         """
         check_is_fitted(self)
 
-        info = pl.DataFrame(list(self.topic_sizes_.items()), schema=["Topic", "Count"]).sort("Topic")
-        info = info.with_columns(pl.col("Topic").map_dict(self.topic_labels_).alias("Name"))
+        info = pd.DataFrame(self.topic_sizes_.items(), columns=["Topic", "Count"]).sort_values("Topic")
+        info["Name"] = info.Topic.map(self.topic_labels_)
 
         # Custom label
         if self.custom_labels_ is not None:
-            if len(self.custom_labels_) == info.height:
-                labels = pl.Series([label for label in self.custom_labels_]).apply(lambda x, y: x - y, y=self._outliers)
-                info = info.with_columns(pl.col("Topic").map(labels).alias("CustomName"))
+            if len(self.custom_labels_) == len(info):
+                labels = {topic - self._outliers: label for topic, label in enumerate(self.custom_labels_)}
+                info["CustomName"] = info["Topic"].map(labels)
 
         # Main Keywords
         values = {topic: list(list(zip(*values))[0]) for topic, values in self.topic_representations_.items()}
-        info = info.with_columns(pl.col("Topic").map_dict(values).alias("Representation"))
+        info["Representation"] = info["Topic"].map(values)
 
         # Extract all topic aspects
-        '''
         if self.topic_aspects_:
             for aspect, values in self.topic_aspects_.items():
                 if isinstance(list(values.values())[-1], list):
                     if isinstance(list(values.values())[-1][0], tuple) or isinstance(list(values.values())[-1][0], list):
-                        values = pl.Series([list(list(zip(*value))[0]) for topic, value in values.items()])
+                        values = {topic: list(list(zip(*value))[0]) for topic, value in values.items()}
                     elif isinstance(list(values.values())[-1][0], str):
-                        values = pl.Series([(" ".join(value).strip()) for topic, value in values.items()])
-                info = info.with_columns(pl.col("Topic").map(values).alias(aspect))
-        '''
+                        values = {topic: " ".join(value).strip() for topic, value in values.items()}
+                info[aspect] = info["Topic"].map(values)
 
-        # Representative Docs 
+        # Representative Docs / Images
         if self.representative_docs_ is not None:
-            info = info.with_columns(pl.col("Topic").map_dict(self.representative_docs_).alias("Representative_Docs"))
+            info["Representative_Docs"] = info["Topic"].map(self.representative_docs_)
 
         # Select specific topic to return
         if topic is not None:
-            info = info.filter(pl.col("Topic") == topic)
+            info = info.loc[info.Topic == topic, :]
 
-        return info.with_row_count(name="index").drop("index")
-    
+        return info.reset_index(drop=True)
+
     def fit_transform(self,
                       documents: List[str],
                       embeddings: np.ndarray = None,
@@ -271,12 +292,12 @@ class TopicAnalysisPolars:
             check_embeddings_shape(embeddings, documents)
 
         doc_ids = range(len(documents)) if documents is not None else range(len(images))
-        documents = pl.DataFrame({"Document": documents,
+        documents = pd.DataFrame({"Document": documents,
                                   "ID": doc_ids,
                                   "Topic": None,})
 
 
-        # Dubiously Reduce dimensionality
+        # Reduce dimensionality
         umap_embeddings = self._reduce_dimensionality(embeddings, y)
 
         # Cluster reduced embeddings
@@ -299,7 +320,7 @@ class TopicAnalysisPolars:
 
         # Resulting output
         self.probabilities_ = self._map_probabilities(probabilities, original_topics=True)
-        predictions = documents['Topic'].to_list()
+        predictions = documents.Topic.to_list()
 
 
         return predictions, self.probabilities_
@@ -360,9 +381,9 @@ class TopicAnalysisPolars:
     
     def _cluster_embeddings(self,
                             umap_embeddings: np.ndarray,
-                            documents: pl.DataFrame,
+                            documents: pd.DataFrame,
                             partial_fit: bool = False,
-                            y: np.ndarray = None) -> Tuple[pl.DataFrame,
+                            y: np.ndarray = None) -> Tuple[pd.DataFrame,
                                                            np.ndarray]:
         """ Cluster UMAP embeddings with HDBSCAN
 
@@ -380,7 +401,7 @@ class TopicAnalysisPolars:
         if partial_fit:
             self.hdbscan_model = self.hdbscan_model.partial_fit(umap_embeddings)
             labels = self.hdbscan_model.labels_
-            documents = documents.with_columns(pl.Series(name="Topic", values=labels))
+            documents['Topic'] = labels
             self.topics_ = labels
         else:
             try:
@@ -392,7 +413,7 @@ class TopicAnalysisPolars:
                 labels = self.hdbscan_model.labels_
             except AttributeError:
                 labels = y
-            documents = documents.with_columns(pl.Series(name="Topic", values=labels))
+            documents['Topic'] = labels
             self._update_topic_size(documents)
 
         # Some algorithms have outlier labels (-1) that can be tricky to work
@@ -419,8 +440,8 @@ class TopicAnalysisPolars:
         Arguments:
             documents: Updated dataframe with documents and their corresponding IDs and newly added Topics
         """
-        self.topic_sizes_ = collections.Counter(dict(documents['Topic'].value_counts().iter_rows()))
-        self.topics_ = documents["Topic"].to_list()
+        self.topic_sizes_ = collections.Counter(documents.Topic.values.tolist())
+        self.topics_ = documents.Topic.astype(int).tolist()
 
     def _extract_embeddings(self,
                             documents: Union[List[str], str],
@@ -456,7 +477,7 @@ class TopicAnalysisPolars:
                              "Either choose 'word' or 'document' as the method. ")
         return embeddings
 
-    def _create_topic_vectors(self, documents: pl.DataFrame = None, embeddings: np.ndarray = None, mappings=None):
+    def _create_topic_vectors(self, documents: pd.DataFrame = None, embeddings: np.ndarray = None, mappings=None):
         """ Creates embeddings per topics based on their topic representation
 
         As a default, topic vectors (topic embeddings) are created by taking
@@ -471,18 +492,16 @@ class TopicAnalysisPolars:
         score. This will put more emphasis to words that represent a topic best.
         """
         # Topic embeddings based on input embeddings
-
-        
-
         if embeddings is not None and documents is not None:
-            df = documents.with_columns(pl.Series(name="embeddings", values=embeddings))
-            aggr = df.group_by("Topic").agg([pl.col("embeddings").list.get(i).alias(f"feature_{i}").mean() for i in range(embeddings.shape[1])])
+            topic_embeddings = []
+            topics = documents.sort_values("Topic").Topic.unique()
+            for topic in topics:
+                indices = documents.loc[documents.Topic == topic, "ID"].values
+                indices = [int(index) for index in indices]
+                topic_embedding = np.mean(embeddings[indices], axis=0)
+                topic_embeddings.append(topic_embedding)
+            self.topic_embeddings_ = np.array(topic_embeddings)
 
-            df = aggr.select(pl.col("Topic"),pl.concat_list([col for col in aggr.columns if "feature" in col]).alias("representive_cluster_vector"))
-            topics = df.sort("Topic")
-            self.topic_embeddings_ = np.array(topics['representive_cluster_vector'].to_list())
-
-        
         # Topic embeddings when merging topics
         elif self.topic_embeddings_ is not None and mappings is not None:
             topic_embeddings_dict = {}
@@ -501,7 +520,7 @@ class TopicAnalysisPolars:
                 topic_embeddings[topics_to_map[topic]] = embds
             unique_topics = sorted(list(topic_embeddings.keys()))
             self.topic_embeddings_ = np.array([topic_embeddings[topic] for topic in unique_topics])
-        '''
+
         # Topic embeddings based on keyword representations
         elif self.embedding_model is not None and type(self.embedding_model) is not BaseEmbedder:
             topic_list = list(self.topic_representations_.keys())
@@ -520,7 +539,6 @@ class TopicAnalysisPolars:
                 method="word",
                 verbose=False
             )
-            
 
             # Take the weighted average of word embeddings in a topic based on their c-TF-IDF value
             # The embeddings var is a single numpy matrix and therefore slicing is necessary to
@@ -534,9 +552,8 @@ class TopicAnalysisPolars:
                 topic_embeddings.append(topic_embedding)
 
             self.topic_embeddings_ = np.array(topic_embeddings)
-        '''
 
-    def _extract_topics(self, documents: pl.DataFrame, embeddings: np.ndarray = None, mappings=None, verbose: bool = False):
+    def _extract_topics(self, documents: pd.DataFrame, embeddings: np.ndarray = None, mappings=None, verbose: bool = False):
         """ Extract topics from the clusters using a class-based TF-IDF
 
         Arguments:
@@ -550,9 +567,8 @@ class TopicAnalysisPolars:
         """
         if verbose:
             logger.info("Representation - Extracting topics from clusters using representation models.")
-        documents_per_topic = documents.group_by(['Topic']).agg(pl.col('Document').str.concat(" "))
+        documents_per_topic = documents.groupby(['Topic'], as_index=False).agg({'Document': ' '.join})
         self.c_tf_idf_, words = self._c_tf_idf(documents_per_topic)
-        #self.ctfidf_model, self.c_tf_idf_, words = tfidf_embed(documents_per_topic, fit=True, partial_fit=False)
         self.topic_representations_ = self._extract_words_per_topic(words, documents)
         self._create_topic_vectors(documents=documents, embeddings=embeddings, mappings=mappings)
         self.topic_labels_ = {key: f"{key}_" + "_".join([word[0] for word in values[:4]])
@@ -563,7 +579,7 @@ class TopicAnalysisPolars:
     
     def _extract_words_per_topic(self,
                                  words: List[str],
-                                 documents: pl.DataFrame,
+                                 documents: pd.DataFrame,
                                  c_tf_idf: csr_matrix = None,
                                  calculate_aspects: bool = True) -> Mapping[str,
                                                                             List[Tuple[str, float]]]:
@@ -585,13 +601,13 @@ class TopicAnalysisPolars:
         if c_tf_idf is None:
             c_tf_idf = self.c_tf_idf_
 
-        labels = sorted(list(documents['Topic'].unique()))
+        labels = sorted(list(documents.Topic.unique()))
         labels = [int(label) for label in labels]
 
         # Get at least the top 30 indices and values per row in a sparse c-TF-IDF matrix
         top_n_words = max(self.top_n_words, 30)
-        indices = _top_n_idx_sparse(c_tf_idf, top_n_words)
-        scores = _top_n_values_sparse(c_tf_idf, indices)
+        indices = self._top_n_idx_sparse(c_tf_idf, top_n_words)
+        scores = self._top_n_values_sparse(c_tf_idf, indices)
         sorted_indices = np.argsort(scores, 1)
         indices = np.take_along_axis(indices, sorted_indices, axis=1)
         scores = np.take_along_axis(scores, sorted_indices, axis=1)
@@ -604,8 +620,17 @@ class TopicAnalysisPolars:
                           ]
                   for index, label in enumerate(labels)}
 
+        # Fine-tune the topic representations
+        if isinstance(self.representation_model, list):
+            for tuner in self.representation_model:
+                topics = tuner.extract_topics(self, documents, c_tf_idf, topics)
+        elif isinstance(self.representation_model, BaseRepresentation):
+            topics = self.representation_model.extract_topics(self, documents, c_tf_idf, topics)
+        elif isinstance(self.representation_model, dict):
+            if self.representation_model.get("Main"):
+                topics = self.representation_model["Main"].extract_topics(self, documents, c_tf_idf, topics)
         topics = {label: values[:self.top_n_words] for label, values in topics.items()}
-        '''
+
         # Extract additional topic aspects
         if calculate_aspects and isinstance(self.representation_model, dict):
             for aspect, aspect_model in self.representation_model.items():
@@ -617,12 +642,12 @@ class TopicAnalysisPolars:
                         self.topic_aspects_[aspect] = aspects
                     elif isinstance(aspect_model, BaseRepresentation):
                         self.topic_aspects_[aspect] = aspect_model.extract_topics(self, documents, c_tf_idf, aspects)
-        '''
+
         return topics
 
     def _extract_representative_docs(self,
                                      c_tf_idf: csr_matrix,
-                                     documents: pl.DataFrame,
+                                     documents: pd.DataFrame,
                                      topics: Mapping[str, List[Tuple[str, float]]],
                                      nr_samples: int = 500,
                                      nr_repr_docs: int = 5,
@@ -651,25 +676,11 @@ class TopicAnalysisPolars:
                           that belong to each topic
         """
         # Sample documents per topic
-        documents = documents.with_row_index("row_idx")
-        documents_per_topic_ = (
-                    documents
-                     .groupby('Topic')
-                     .agg(
-                         [pl.col("row_idx").sample(fraction=0.6, with_replacement=False, seed=1)]
-                     )
-                     .explode("row_idx")
-        )
         documents_per_topic = (
-            pl.concat(
-                [documents_per_topic_, 
-                 documents
-                 .select(pl.all().exclude(["Topic", "row_idx"])
-                 .take(documents_per_topic_["row_idx"]))], how="horizontal")
-            
-            )
-        
-        
+            documents.groupby('Topic')
+                     .sample(n=nr_samples, replace=True, random_state=42)
+                     .drop_duplicates()
+        )
 
         # Find and extract documents that are most similar to the topic
         repr_docs = []
@@ -679,10 +690,10 @@ class TopicAnalysisPolars:
         labels = sorted(list(topics.keys()))
         for index, topic in enumerate(labels):
 
-            # Slice data using polars
-            selection = documents_per_topic.filter(pl.col("Topic") == topic)
-            selected_docs = selection["Document"].to_list()
-            selected_docs_ids = selection['row_idx'].to_list()
+            # Slice data
+            selection = documents_per_topic.loc[documents_per_topic.Topic == topic, :]
+            selected_docs = selection["Document"].values
+            selected_docs_ids = selection.index.tolist()
 
             # Calculate similarity
             nr_docs = nr_repr_docs if len(selected_docs) > nr_repr_docs else len(selected_docs)
@@ -708,7 +719,7 @@ class TopicAnalysisPolars:
         return repr_docs_mappings, repr_docs, repr_docs_indices, repr_docs_ids
 
     def _c_tf_idf(self,
-                  documents_per_topic: pl.DataFrame,
+                  documents_per_topic: pd.DataFrame,
                   fit: bool = True,
                   partial_fit: bool = False) -> Tuple[csr_matrix, List[str]]:
         """ Calculate a class-based TF-IDF where m is the number of total documents.
@@ -724,7 +735,7 @@ class TopicAnalysisPolars:
             tf_idf: The resulting matrix giving a value (importance score) for each word per topic
             words: The names of the words to which values were given
         """
-        documents = self._preprocess_text(documents_per_topic['Document'].to_numpy())
+        documents = self._preprocess_text(documents_per_topic.Document.values)
 
         if partial_fit:
             X = self.vectorizer_model.partial_fit(documents).update_bow(documents)
@@ -733,15 +744,15 @@ class TopicAnalysisPolars:
             X = self.vectorizer_model.transform(documents)
         else:
             X = self.vectorizer_model.transform(documents)
+
         # Scikit-Learn Deprecation: get_feature_names is deprecated in 1.0
         # and will be removed in 1.2. Please use get_feature_names_out instead.
         if version.parse(sklearn_version) >= version.parse("1.0.0"):
             words = self.vectorizer_model.get_feature_names_out()
         else:
             words = self.vectorizer_model.get_feature_names()
-        
+
         multiplier = None
-        '''
         if self.ctfidf_model.seed_words and self.seed_topic_list:
             seed_topic_list = [seed for seeds in self.seed_topic_list for seed in seeds]
             multiplier = np.array([self.ctfidf_model.seed_multiplier if word in self.ctfidf_model.seed_words else 1 for word in words])
@@ -751,11 +762,12 @@ class TopicAnalysisPolars:
         elif self.seed_topic_list:
             seed_topic_list = [seed for seeds in self.seed_topic_list for seed in seeds]
             multiplier = np.array([1.2 if word in seed_topic_list else 1 for word in words])
-        '''
+
         if fit:
             self.ctfidf_model = self.ctfidf_model.fit(X, multiplier=multiplier)
 
         c_tf_idf = self.ctfidf_model.transform(X)
+
         return c_tf_idf, words
     
     def _preprocess_text(self, documents: np.ndarray) -> List[str]:
@@ -771,6 +783,9 @@ class TopicAnalysisPolars:
             cleaned_documents = [re.sub(r'[^A-Za-z0-9 ]+', '', doc) for doc in cleaned_documents]
         cleaned_documents = [doc if doc != "" else "emptydoc" for doc in cleaned_documents]
         return cleaned_documents
+    
+    def label_clusters(self):
+        pass
 
     def hierarchical_topics(self,
                             docs: List[str],
@@ -919,7 +934,7 @@ class TopicAnalysisPolars:
         return hier_topics
     
     @staticmethod
-    def get_topic_tree(hier_topics: pl.DataFrame,
+    def get_topic_tree(hier_topics: pd.DataFrame,
                        max_distance: float = None,
                        tight_layout: bool = False) -> str:
         """ Extract the topic tree such that it can be printed
@@ -1020,7 +1035,44 @@ class TopicAnalysisPolars:
         start = str(hier_topics.Parent_ID.astype(int).max())
         return get_tree(start, tree)
 
-    
+    @staticmethod
+    def _top_n_idx_sparse(matrix: csr_matrix, n: int) -> np.ndarray:
+        """ Return indices of top n values in each row of a sparse matrix
+
+        Retrieved from:
+            https://stackoverflow.com/questions/49207275/finding-the-top-n-values-in-a-row-of-a-scipy-sparse-matrix
+
+        Arguments:
+            matrix: The sparse matrix from which to get the top n indices per row
+            n: The number of highest values to extract from each row
+
+        Returns:
+            indices: The top n indices per row
+        """
+        indices = []
+        for le, ri in zip(matrix.indptr[:-1], matrix.indptr[1:]):
+            n_row_pick = min(n, ri - le)
+            values = matrix.indices[le + np.argpartition(matrix.data[le:ri], -n_row_pick)[-n_row_pick:]]
+            values = [values[index] if len(values) >= index + 1 else None for index in range(n)]
+            indices.append(values)
+        return np.array(indices)
+
+    @staticmethod
+    def _top_n_values_sparse(matrix: csr_matrix, indices: np.ndarray) -> np.ndarray:
+        """ Return the top n values for each row in a sparse matrix
+
+        Arguments:
+            matrix: The sparse matrix from which to get the top n indices per row
+            indices: The top n indices per row
+
+        Returns:
+            top_values: The top n scores per row
+        """
+        top_values = []
+        for row, values in enumerate(indices):
+            scores = np.array([matrix[row, value] if value is not None else 0 for value in values])
+            top_values.append(scores)
+        return np.array(top_values)
     
     def _map_probabilities(self,
                            probabilities: Union[np.ndarray, None],
@@ -1349,43 +1401,3 @@ def validate_distance_matrix(X, n_samples):
         raise ValueError("Distance matrix cannot contain negative values.")
 
     return X
-
-
-@staticmethod
-def _top_n_idx_sparse(matrix: csr_matrix, n: int) -> np.ndarray:
-    """ Return indices of top n values in each row of a sparse matrix
-
-    Retrieved from:
-        https://stackoverflow.com/questions/49207275/finding-the-top-n-values-in-a-row-of-a-scipy-sparse-matrix
-
-    Arguments:
-        matrix: The sparse matrix from which to get the top n indices per row
-        n: The number of highest values to extract from each row
-
-    Returns:
-        indices: The top n indices per row
-    """
-    indices = []
-    for le, ri in zip(matrix.indptr[:-1], matrix.indptr[1:]):
-        n_row_pick = min(n, ri - le)
-        values = matrix.indices[le + np.argpartition(matrix.data[le:ri], -n_row_pick)[-n_row_pick:]]
-        values = [values[index] if len(values) >= index + 1 else None for index in range(n)]
-        indices.append(values)
-    return np.array(indices)
-
-@staticmethod
-def _top_n_values_sparse(matrix: csr_matrix, indices: np.ndarray) -> np.ndarray:
-    """ Return the top n values for each row in a sparse matrix
-
-    Arguments:
-        matrix: The sparse matrix from which to get the top n indices per row
-        indices: The top n indices per row
-
-    Returns:
-        top_values: The top n scores per row
-    """
-    top_values = []
-    for row, values in enumerate(indices):
-        scores = np.array([matrix[row, value] if value is not None else 0 for value in values])
-        top_values.append(scores)
-    return np.array(top_values)

@@ -46,7 +46,6 @@ def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
 
 
 #define the distributed classification method
-# @app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
 @app.function(image=datascience_image,volumes={"/cynde_mount": vol})
 def train_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
     input_config = pipeline_input.input_config
