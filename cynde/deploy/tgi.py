@@ -37,11 +37,12 @@ app = App(
     "example-tgi-" + MODEL_ID.split("/")[-1]
 )  # Note: prior to April 2024, "app" was called "stub"
 print("App name:", app.name)
-latest_version = "ghcr.io/huggingface/text-generation-inference:sha-f9cf345"
+latest_version = "ghcr.io/huggingface/text-generation-inference:2.0"
 version_from_example = "ghcr.io/huggingface/text-generation-inference:1.4"
 tgi_image = (
     Image.from_registry(latest_version)
     .dockerfile_commands("ENTRYPOINT []")
+    .pip_install("text-generation")
     .run_function(
         download_model,
         secrets=[Secret.from_name("huggingface-secret")],
@@ -52,7 +53,7 @@ tgi_image = (
     .pip_install("text-generation")
 )
 
-GPU_CONFIG = gpu.A100(count=1,size="40GB")  # 2 H100s
+GPU_CONFIG = gpu.A100(count=1,size="40GB")  # 2 H100
 
 
 @app.cls(
