@@ -22,21 +22,21 @@ texts = [
 ]
 # Additional similar sentences
 texts = [
-    "On my nature walk, I glimpsed a butterfly, a hedgehog, and a sparrow among the bushes.",
-    "At the aquarium, I marveled at a seahorse, a manta ray, and a clownfish in the reef exhibit.",
-    "In the savannah, I witnessed a cheetah chasing a gazelle across the grasslands.",
-    "During my evening stroll, I observed a possum, a skunk, and a barn owl along the trail.",
-    "On the farm, I encountered a rooster, a sheep, and a friendly goat near the barn.",
-    "In the wetland, I saw a heron, a frog, and a muskrat in the water.",
-    "While snorkeling, I spotted a parrotfish, a sea turtle, and a moray eel near the coral reef.",
-    "On the safari, I caught a glimpse of a rhinoceros and a leopard resting under the acacia trees.",
-    "In the meadow, I noticed a hare, a woodpecker, and a bumblebee buzzing around the flowers.",
-    "During the morning jog, I came across a beaver, a red fox, and a mallard duck by the stream.",
-    "At the wildlife sanctuary, I watched a condor and a jackal circling over the rocky outcrops.",
+    "tr On my nature walk, I glimpsed a butterfly, a hedgehog, and a sparrow among the bushes.",
+    "as At the aquarium, I marveled at a seahorse, a manta ray, and a clownfish in the reef exhibit.",
+    "ca In the savannah, I witnessed a cheetah chasing a gazelle across the grasslands.",
+    "ad During my evening stroll, I observed a possum, a skunk, and a barn owl along the trail.",
+    " a On the farm, I encountered a rooster, a sheep, and a friendly goat near the barn.",
+    "In the wetland, I asd saw a heron, a frog, and a muskrat in the water.",
+    " re While snorkeling, I spotted a parrotfish, a sea turtle, and a moray eel near the coral reef.",
+    "sa On the safari, I caught a glimpse of a rhinoceros and a leopard resting under the acacia trees.",
+    "fa In the meadow, I noticed a hare, a woodpecker, and a bumblebee buzzing around the flowers.",
+    "duDuring the morning jog, I came across a beaver, a red fox, and a mallard duck by the stream.",
+    "te At the wildlife sanctuary, I watched a condor and a jackal circling over the rocky outcrops.",
     "In the jungle, I saw a toucan, a capybara, and a jaguar hiding in the canopy.",
-    "At the riverbank, I noticed a kingfisher, a salamander, and a dragonfly skimming the water.",
-    "During a forest trek, I saw a lynx, a pine marten, and a wild boar rustling through the underbrush.",
-    "In the desert, I stumbled upon a fennec fox and a scorpion seeking shade under a cactus."
+    "seAt the riverbank, I noticed a kingfisher, a salamander, and a dragonfly skimming the water.",
+    "I During a forest trek, I saw a lynx, a pine marten, and a wild boar rustling through the underbrush.",
+    "as In the desert, I stumbled upon a fennec fox and a scorpion seeking shade under a cactus."
 ]
 
 df = pl.DataFrame(data={"text":texts})

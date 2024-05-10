@@ -42,15 +42,14 @@ version_from_example = "ghcr.io/huggingface/text-generation-inference:1.4"
 tgi_image = (
     Image.from_registry(latest_version)
     .dockerfile_commands("ENTRYPOINT []")
+    .run_commands("pip install pydantic --upgrade")
+    .pip_install("outlines")
     .pip_install("text-generation")
     .run_function(
         download_model,
         secrets=[Secret.from_name("huggingface-secret")],
         timeout=3600,
     )
-    .run_commands("pip install pydantic --upgrade")
-    .pip_install("outlines")
-    .pip_install("text-generation")
 )
 
 GPU_CONFIG = gpu.A100(count=1,size="40GB")  # 2 H100
@@ -59,7 +58,7 @@ GPU_CONFIG = gpu.A100(count=1,size="40GB")  # 2 H100
 @app.cls(
     secrets=[Secret.from_name("huggingface-secret")],
     gpu=GPU_CONFIG,
-    allow_concurrent_inputs=15,
+    allow_concurrent_inputs=500,
     container_idle_timeout=60 * 10,
     timeout=60 * 60,
     image=tgi_image,

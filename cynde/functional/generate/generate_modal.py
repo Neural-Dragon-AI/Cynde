@@ -27,8 +27,10 @@ def generate_column(df:pl.DataFrame, instruction_cfg:InstructionConfig) -> pl.Da
         request = instruction.to_tgi_request()
         requests.append(request)
     responses = []
-    for request in requests:
-        response = f.remote(request)
+    responses_generator = f.map(requests)
+    # for request in requests:
+    #     response = f.remote(request)
+    for response in responses_generator:
         responses.append(response.generated_text)
     evaluation = [bool]
 
