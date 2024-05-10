@@ -6,6 +6,7 @@ import polars as pl
 from openai import Client
 import json
 import tiktoken
+from pydantic import BaseModel, Field
 
 import asyncio
 from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
@@ -162,7 +163,28 @@ def check_max_token_len(df:pl.DataFrame, column_name:str, max_len:int=8192):
 
     return df.select(pl.col('token_len').max().alias('max_token_len'))[0, 'max_token_len']
 
-def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, results_filepath: str, api_key: str, model_name="text-embedding-3-small", request_url = "https://api.openai.com/v1/embeddings", batch_size:int=5) -> pl.DataFrame:
+class EmbedConfigOAI(BaseModel):
+ column_name: str
+ requests_filepath: str
+ results_filepath: str
+ api_key: str
+ model_name:str =Field("text-embedding-3-small",description="The model name to use for generating embeddings")
+ request_url:str =  Field("https://api.openai.com/v1/embeddings",description="The url to use for generating embeddings")
+ batch_size:int = Field (1,description="The batch size to use for generating embeddings")
+ max_requests_per_minute: float = Field(100,description="The maximum number of requests per minute")
+ max_tokens_per_minute: float = Field(1_000_000,description="The maximum number of tokens per minute")
+ max_attempts:int = Field(5,description="The maximum number of attempts to make for each request")
+ logging_level:int = Field(20,description="The logging level to use for the request")
+
+
+def embed_column(df: pl.DataFrame, embed_cfg :EmbedConfigOAI) -> pl.DataFrame:
+    column_name = embed_cfg.column_name
+    requests_filepath = embed_cfg.requests_filepath
+    results_filepath = embed_cfg.results_filepath
+    api_key = embed_cfg.api_key
+    model_name = embed_cfg.model_name
+    request_url = embed_cfg.request_url
+    batch_size = embed_cfg.batch_size
 
     if check_max_token_len(df, column_name) > MAX_INPUT[model_name]:
         raise ValueError(f"Elements in the column exceed the max token length of {model_name}. Max token length is {MAX_INPUT[model_name]}, please remove or truncated the elements that exceed the max len in the column.")
@@ -180,11 +202,11 @@ def embed_column(df: pl.DataFrame, column_name: str, requests_filepath: str, res
             save_filepath=results_filepath,
             request_url=request_url,
             api_key=api_key,
-            max_requests_per_minute=float(100),#10_000
-            max_tokens_per_minute=float(1_000_000),#10_000_000
+            max_requests_per_minute=embed_cfg.max_requests_per_minute,
+            max_tokens_per_minute=embed_cfg.max_tokens_per_minute,
             token_encoding_name="cl100k_base",
-            max_attempts=int(5),
-            logging_level=int(20),
+            max_attempts=embed_cfg.max_attempts,
+            logging_level=embed_cfg.logging_level
             )
         )
     print(f'process_api_requests_from_file took {perf_counter()-t0} minutes/seconds')

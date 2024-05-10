@@ -2,7 +2,7 @@
 
 - Full filepath to the merged directory: `C:\Users\Tommaso\Documents\Dev\Cynde\cynde`
 
-- Created: `2024-05-05T12:40:41.963491`
+- Created: `2024-05-10T14:21:07.081960`
 
 ## init
 
@@ -585,6 +585,82 @@ class ChatCompletion(OriginalChatCompletion):
 
 ---
 
+## cvt
+
+from modal import Volume
+import modal
+from modal import Image
+from typing import Tuple
+from cynde.functional.train.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
+from cynde.functional.train.preprocess import load_preprocessed_features
+from cynde.functional.train.cv import train_test_val
+from cynde.functional.train.train_local import create_pipeline ,evaluate_model
+import os
+
+from modal import Volume
+vol = Volume.from_name("cynde_cv", create_if_missing=True)
+
+app = modal.App("distributed_cv")
+    
+datascience_image = (
+    Image.debian_slim(python_version="3.12.1")
+    .apt_install("git")
+    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
+    
+    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
+    .env({"CYNDE_DIR": "/opt/cynde"})
+    .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
+)
+with datascience_image.imports():
+    import polars as pl
+    import sklearn as sk
+    import cynde as cy
+
+
+@app.function(image=datascience_image,volumes={"/cynde_mount": vol})
+def preprocess_inputs_distributed(df: pl.DataFrame, input_config: InputConfig):
+    """ Saves .parquet for each feature set in input_config """
+    save_folder = input_config.remote_folder
+    os.makedirs(save_folder,exist_ok=True)
+    for feature_set in input_config.feature_sets:
+        column_names = feature_set.column_names()
+        feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
+        print(f"selected columns: {feature_set_df.columns}")
+        save_name = feature_set.joined_names()
+        save_path = os.path.join(save_folder, f"{save_name}.parquet")
+        feature_set_df.write_parquet(save_path)
+        print("saved the parquet file at ", save_path)
+    vol.commit()
+    print("committed the volume")
+
+
+#define the distributed classification method
+@app.function(image=datascience_image,volumes={"/cynde_mount": vol})
+def train_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+    input_config = pipeline_input.input_config
+    feature_set = input_config.feature_sets[pipeline_input.feature_index]
+    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index,remote=True)
+    print(df_fold)
+    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
+    print(df_train)
+    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
+    print(pipeline)
+    pipeline.fit(df_train,df_train["target"])
+    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
+    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
+    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
+    return PipelineResults(train_predictions = train_predictions,
+                           val_predictions=val_predictions,
+                           test_predictions=test_predictions,
+                           train_accuracy=train_accuracy,
+                           train_mcc=train_mcc,
+                           val_accuracy=val_accuracy,
+                           val_mcc=val_mcc,
+                           test_accuracy=test_accuracy,
+                           test_mcc=test_mcc)
+
+---
+
 ## tei
 
 import os
@@ -700,7 +776,7 @@ class Model:
         import httpx
 
         try:
-            response = await self.client.post("/embed", json=request.dict())
+            response = await self.client.post("/embed", json=request.model_dump())
             response.raise_for_status()  # Raise an exception for 4xx or 5xx status codes
             embeddings = np.array(response.json())
             return embeddings
@@ -884,33 +960,33 @@ class LLamaInst3Request(TGIRequest):
 ## init
 
 # This is the __init__.py file for the package.
-from .embed import *
-from .prompt import *
-from .cv import *
-from .classify import *
-from .generate import *
-from .results import *
+# from .embed import *
+# from .prompt import *
+# from .cv import *
+# from .classify import *
+# from .generate import *
+# from .results import *
 
 
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
 
 
-def set_directories(root_dir):
-    if root_dir is None:
-        raise ValueError("CYNDE_DIR environment variable must be set before using cynde")
-    os.makedirs(root_dir, exist_ok=True)
-    os.makedirs(os.path.join(root_dir, "cache"), exist_ok=True)
-    os.makedirs(os.path.join(root_dir, "output"), exist_ok=True)
-    os.makedirs(os.path.join(root_dir, "cynde_mount"), exist_ok=True)
-    os.environ['CACHE_DIR'] = os.path.join(root_dir, "cache")
-    os.environ['OUTPUT_DIR'] = os.path.join(root_dir, "output")
-    os.environ['MODAL_MOUNT'] = os.path.join(root_dir, "cynde_mount")
+# def set_directories(root_dir):
+#     if root_dir is None:
+#         raise ValueError("CYNDE_DIR environment variable must be set before using cynde")
+#     os.makedirs(root_dir, exist_ok=True)
+#     os.makedirs(os.path.join(root_dir, "cache"), exist_ok=True)
+#     os.makedirs(os.path.join(root_dir, "output"), exist_ok=True)
+#     os.makedirs(os.path.join(root_dir, "cynde_mount"), exist_ok=True)
+#     os.environ['CACHE_DIR'] = os.path.join(root_dir, "cache")
+#     os.environ['OUTPUT_DIR'] = os.path.join(root_dir, "output")
+#     os.environ['MODAL_MOUNT'] = os.path.join(root_dir, "cynde_mount")
 
-root_dir = os.getenv('CYNDE_DIR')
-print(root_dir)
-set_directories(root_dir)
+# root_dir = os.getenv('CYNDE_DIR')
+# print(root_dir)
+# set_directories(root_dir)
 
 ---
 
@@ -921,7 +997,57 @@ set_directories(root_dir)
 
 ---
 
-## embed
+## embed modal
+
+import modal
+from pydantic import BaseModel,conint,ValidationError,Field
+from typing import List, Optional
+import polars as pl
+from cynde.functional.embed.types import EmbeddingRequest
+import numpy as np
+
+class EmbedConfig(BaseModel):
+    column: str
+    modal_endpoint: str = Field("example-tei-bge-small-en-v1.5",description="The modal endpoint to use for generating instructions")
+
+class EmbeddingResponse(BaseModel):
+    request: EmbeddingRequest
+    response: np.ndarray
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
+def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
+    f = modal.Function.lookup(embed_cfg.modal_endpoint, "Model.embed")
+    requests = []
+    for text in df[embed_cfg.column]:
+        request = EmbeddingRequest(inputs=text)
+        requests.append(request)
+    responses = []
+    responses_generator = f.map(requests)
+    for response in responses_generator:
+        validated_response = EmbeddingResponse(request=request,response=response)
+        responses.append(response)
+    #vstack the responses
+    responses = np.vstack(responses)
+    input_column_name = embed_cfg.column
+    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
+    df_responses = pl.DataFrame(data={output_column_name:responses})
+    df = pl.concat([df,df_responses],how="horizontal")
+    return df
+
+def validate_column(df:pl.DataFrame, embed_cfg: EmbedConfig):
+    input_column_name = embed_cfg.column
+    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
+    if output_column_name not in df.columns:
+        raise ValueError(f"Column {output_column_name} not found in DataFrame")
+    return df
+
+
+
+---
+
+## embed oai
 
 import time
 from time import perf_counter
@@ -1213,63 +1339,6 @@ def compute_embedding_price(df:pl.DataFrame, text_column:str, model:str):
 
 ---
 
-## init
-
-# This is the __init__.py file for the package.
-
-
----
-
-## modal embed
-
-import modal
-from pydantic import BaseModel,conint,ValidationError,Field
-from typing import List, Optional
-import polars as pl
-from cynde.functional.embed.types import EmbeddingRequest
-import numpy as np
-
-class EmbedConfig(BaseModel):
-    column: str
-    modal_endpoint: str = Field("example-tei-bge-small-en-v1.5",description="The modal endpoint to use for generating instructions")
-
-class EmbeddingResponse(BaseModel):
-    request: EmbeddingRequest
-    response: np.ndarray
-    class Config:
-        arbitrary_types_allowed = True
-        extra = "allow"
-
-def embed_column(df:pl.DataFrame, embed_cfg: EmbedConfig) -> pl.DataFrame:
-    f = modal.Function.lookup(embed_cfg.modal_endpoint, "Model.embed")
-    requests = []
-    for text in df[embed_cfg.column]:
-        request = EmbeddingRequest(inputs=text)
-        requests.append(request)
-    responses = []
-    responses_generator = f.map(requests)
-    for response in responses_generator:
-        validated_response = EmbeddingResponse(request=request,response=response)
-        responses.append(response)
-    #vstack the responses
-    responses = np.vstack(responses)
-    input_column_name = embed_cfg.column
-    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
-    df_responses = pl.DataFrame(data={output_column_name:responses})
-    df = pl.concat([df,df_responses],how="horizontal")
-    return df
-
-def validate_column(df:pl.DataFrame, embed_cfg: EmbedConfig):
-    input_column_name = embed_cfg.column
-    output_column_name = f"{input_column_name}_{embed_cfg.modal_endpoint}"
-    if output_column_name not in df.columns:
-        raise ValueError(f"Column {output_column_name} not found in DataFrame")
-    return df
-
-
-
----
-
 ## types
 
 from pydantic import BaseModel
@@ -1279,7 +1348,83 @@ class EmbeddingRequest(BaseModel):
 
 ---
 
-## generate
+## init
+
+# This is the __init__.py file for the package.
+
+
+---
+
+## generate modal
+
+import modal
+from pydantic import BaseModel,conint,ValidationError
+from typing import List, Optional
+import pickle
+import cloudpickle
+import polars as pl
+from cynde.functional.generate.types import LLamaInstruction,InstructionConfig
+from pydantic._internal._model_construction import ModelMetaclass
+
+
+
+def generate_instructions(df:pl.DataFrame, instruction:InstructionConfig) -> List[LLamaInstruction]:
+    system_prompt = instruction.system_prompt
+    column = instruction.column
+    output_schema = instruction.output_schema
+    instructions = []
+    for text in df[column]:
+        instruction = LLamaInstruction(system_prompt=system_prompt, user_message=text, output_schema=output_schema)
+        instructions.append(instruction)
+    return instructions
+    
+def generate_column(df:pl.DataFrame, instruction_cfg:InstructionConfig) -> pl.DataFrame:
+    f = modal.Function.lookup(instruction_cfg.modal_endpoint, "Model.generate")
+    instructions = generate_instructions(df,instruction_cfg)
+    requests = []
+    for instruction in instructions:
+        request = instruction.to_tgi_request()
+        requests.append(request)
+    responses = []
+    for request in requests:
+        response = f.remote(request)
+        responses.append(response.generated_text)
+    evaluation = [bool]
+
+
+    schema_name = instruction_cfg.output_schema["title"]
+    input_column_name = instruction_cfg.column
+    output_column_name = f"{input_column_name}_{schema_name}"
+    df_responses = pl.DataFrame(data={output_column_name:responses})
+    df = pl.concat([df,df_responses],how="horizontal")
+    return df
+
+def validate_df(df:pl.DataFrame, pydantic_model:BaseModel) -> pl.DataFrame:
+    json_schema = pydantic_model.model_json_schema()
+    name = json_schema["title"]
+    target_cols = [col for col in df.columns if name in col]
+    
+    for col in target_cols:
+        validations = []
+        validations_erros = []
+        for generation in df[col]:
+            try:
+                print("generation inside validation:",generation,type(generation))
+                validated_model = pydantic_model.model_validate_json(generation)
+                validations.append(True)
+                validations_erros.append(None)
+            except ValidationError as e:
+                validations.append(False)
+                validations_erros.append(e)
+        col_df = pl.DataFrame(data={f"{col}_validations":validations,f"{col}_errors":validations_erros})
+        df = pl.concat([df,col_df],how="horizontal")
+    return df
+
+
+
+---
+
+## generate oai
 
 from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
 from cynde.async_tools.oai_types import ChatCompletion
@@ -1474,82 +1619,6 @@ def process_and_merge_llm_responses(df: pl.DataFrame, column_name: str, system_p
 
 ---
 
-## init
-
-# This is the __init__.py file for the package.
-
-
----
-
-## modal gen
-
-import modal
-from pydantic import BaseModel,conint,ValidationError
-from typing import List, Optional
-import pickle
-import cloudpickle
-import polars as pl
-from cynde.functional.generate.types import LLamaInstruction,InstructionConfig
-from pydantic._internal._model_construction import ModelMetaclass
-
-
-
-def generate_instructions(df:pl.DataFrame, instruction:InstructionConfig) -> List[LLamaInstruction]:
-    system_prompt = instruction.system_prompt
-    column = instruction.column
-    output_schema = instruction.output_schema
-    instructions = []
-    for text in df[column]:
-        instruction = LLamaInstruction(system_prompt=system_prompt, user_message=text, output_schema=output_schema)
-        instructions.append(instruction)
-    return instructions
-    
-def generate_column(df:pl.DataFrame, instruction_cfg:InstructionConfig) -> pl.DataFrame:
-    f = modal.Function.lookup(instruction_cfg.modal_endpoint, "Model.generate")
-    instructions = generate_instructions(df,instruction_cfg)
-    requests = []
-    for instruction in instructions:
-        request = instruction.to_tgi_request()
-        requests.append(request)
-    responses = []
-    for request in requests:
-        response = f.remote(request)
-        responses.append(response.generated_text)
-    evaluation = [bool]
-
-
-    schema_name = instruction_cfg.output_schema["title"]
-    input_column_name = instruction_cfg.column
-    output_column_name = f"{input_column_name}_{schema_name}"
-    df_responses = pl.DataFrame(data={output_column_name:responses})
-    df = pl.concat([df,df_responses],how="horizontal")
-    return df
-
-def validate_df(df:pl.DataFrame, pydantic_model:BaseModel) -> pl.DataFrame:
-    json_schema = pydantic_model.model_json_schema()
-    name = json_schema["title"]
-    target_cols = [col for col in df.columns if name in col]
-    
-    for col in target_cols:
-        validations = []
-        validations_erros = []
-        for generation in df[col]:
-            try:
-                print("generation inside validation:",generation,type(generation))
-                validated_model = pydantic_model.model_validate_json(generation)
-                validations.append(True)
-                validations_erros.append(None)
-            except ValidationError as e:
-                validations.append(False)
-                validations_erros.append(e)
-        col_df = pl.DataFrame(data={f"{col}_validations":validations,f"{col}_errors":validations_erros})
-        df = pl.concat([df,col_df],how="horizontal")
-    return df
-
-
-
----
-
 ## types
 
 from pydantic import BaseModel, Field
@@ -1588,135 +1657,151 @@ class InstructionConfig(BaseModel):
 
 ---
 
-## init
+## prompt
 
-# This is the __init__.py file for the package.
+from typing import List, Union
+import polars as pl
+
+def prompt(df: pl.DataFrame, fstring: str, expressions: List[Union[pl.Expr, str]], prompt_name: str, context: str = 'with_columns') -> pl.DataFrame:
+    """
+    Dynamically generates prompts based on the given format string and expressions, 
+    and either adds them as a new column to the DataFrame or selects them based on the specified context.
+
+    Parameters:
+    - df: The Polars DataFrame to which the prompts will be added or from which data will be selected.
+    - fstring: A format string with placeholders for the expressions. If a plain string value is to be included, 
+               it will be converted to a Polars expression.
+    - expressions: A list of Polars expressions or string literals. Each expression must result in either a scalar value 
+                   or a list of values all having the same length. When using 'with_columns' context, the expressions 
+                   must return lists of the same length as the full DataFrame.
+    - prompt_name: The name of the new column that will contain the generated prompts.
+    - context: A string indicating the operation context. Valid values are 'with_columns' and 'select'.
+               'with_columns' appends the generated prompts as a new column, requiring list results to match
+               the DataFrame length. 'select' creates a new DataFrame from the generated prompts, potentially
+               alongside other specified columns.
+
+    Returns:
+    - A DataFrame with the added prompts column if 'with_columns' is used, or a new DataFrame with selected columns
+      if 'select' is used. The result of each expression used in the formatting must result in either a scalar 
+      value or a list of values all having the same length, especially for 'with_columns' context.
+    """
+    # Convert string values in expressions to Polars expressions
+    expressions = [pl.lit(expr) if isinstance(expr, str) else expr for expr in expressions]
+
+    # Validate inputs
+    if not isinstance(df, pl.DataFrame):
+        raise ValueError("df must be a Polars DataFrame.")
+    if not isinstance(fstring, str):
+        raise ValueError("fstring must be a string.")
+    if not all(isinstance(expr, pl.Expr) for expr in expressions):
+        raise ValueError("All items in expressions must be Polars Expr or string literals converted to Polars expressions.")
+    if not isinstance(prompt_name, str):
+        raise ValueError("prompt_name must be a string.")
+    if context not in ['with_columns', 'select']:
+        raise ValueError("context must be either 'with_columns' or 'select'.")
+
+    # Validate the number of placeholders matches the number of expressions
+    placeholders_count = fstring.count("{}")
+    if placeholders_count != len(expressions):
+        raise ValueError(f"The number of placeholders in fstring ({placeholders_count}) does not match the number of expressions ({len(expressions)}).")
+
+    # Use pl.format to generate the formatted expressions
+    formatted_expr = pl.format(fstring, *expressions).alias(prompt_name)
+    
+    # Apply the context-specific operation
+    if context == 'with_columns':
+        # Append the generated prompt as a new column
+        return df.with_columns(formatted_expr)
+    else:  # context == 'select'
+        # Create a new DataFrame with only the generated prompts or alongside other specified columns
+        return df.select(formatted_expr)
 
 
 ---
 
-## classify
+## results
 
-from sklearn.ensemble import RandomForestClassifier,HistGradientBoostingClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, matthews_corrcoef
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, PowerTransformer, QuantileTransformer, Normalizer, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
 import polars as pl
-from typing import Tuple
-import time
-from cynde.functional.predict.types import PipelineResults,PredictConfig,PipelineInput,FeatureSet,InputConfig,ClassifierConfig,BaseClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
-from cynde.functional.predict.cv import train_test_val,generate_nested_cv
-from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index,validate_preprocessed_inputs
+from cynde.functional.cv import get_fold_name_cv
+from cynde.functional.classify import get_hp_classifier_name, get_pred_column_name, get_input_name
+from typing import List, Dict, Union, Tuple, Any
 
-def create_pipeline(df: pl.DataFrame, feature_set: FeatureSet, classifier_config: BaseClassifierConfig) -> Pipeline:
-    """ maybne the df.schema is enough and we do not need to pass the whole df """
-    transformers = []
-    numerical_features = [feature.column_name for feature in feature_set.numerical]
-    if numerical_features:
-        scaler = feature_set.numerical[0].get_scaler()  # Assuming all numerical features use the same scaler
-        transformers.append(("numerical", scaler, numerical_features))
-    embedding_features = [feature.column_name for feature in feature_set.embeddings]
-    if embedding_features:
-        #embedding features are stored as list[float] in polars but we map them to multiple columns of float in sklearn
-        # so here we assume that we already pre-processed each embedding_feature to bea  lsit of columns of format column_name_{i}
-        #accumulate for each embedding feature the list of columns that represent it and flatten it
-        embedding_features = [f"{feature}_{i}" for feature in embedding_features for i in range(0,feature_set.embeddings[0].embedding_size)]
-        scaler = feature_set.embeddings[0].get_scaler()  # Assuming all embedding features use the same scaler
-        transformers.append(("embedding", scaler, embedding_features))
-
-    categorical_features = [feature.column_name for feature in feature_set.categorical]
-    if categorical_features:
-        for feature in feature_set.categorical:
-            if feature.one_hot_encoding:
-                if df[feature.column_name].dtype == pl.Categorical:
-                    categories = [df[feature.column_name].unique().to_list()]
-                elif df[feature.column_name].dtype == pl.Enum:
-                    categories = [df[feature.column_name].dtype.categories]
-                else:
-                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Categorical or pl.Enum for one-hot encoding.")
-                one_hot_encoder = OneHotEncoder(categories=categories, handle_unknown='error', sparse_output=False)
-                transformers.append((f"categorical_{feature.column_name}", one_hot_encoder, [feature.column_name]))
-            else:
-                if df[feature.column_name].dtype not in [pl.Float32, pl.Float64]:
-                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Float32 or pl.Float64 for physical representation.")
-                transformers.append((f"categorical_{feature.column_name}", "passthrough", [feature.column_name]))
-
-    preprocessor = ColumnTransformer(transformers)
-
-    # Create the classifier based on the classifier configuration
-    if isinstance(classifier_config, LogisticRegressionConfig):
-        classifier = LogisticRegression(**classifier_config.dict(exclude={"classifier_name"}))
-    elif isinstance(classifier_config, RandomForestClassifierConfig):
-        classifier = RandomForestClassifier(**classifier_config.dict(exclude={"classifier_name"}))
-    elif isinstance(classifier_config, HistGradientBoostingClassifierConfig):
-        classifier = HistGradientBoostingClassifier(**classifier_config.dict(exclude={"classifier_name"}))
-    else:
-        raise ValueError(f"Unsupported classifier: {classifier_config.classifier_name}")
-
-    pipeline = Pipeline([("preprocessor", preprocessor), ("classifier", classifier)])
-    pipeline.set_output(transform="polars")
-    return pipeline
-
-def evaluate_model(pipeline: Pipeline, X, y):
-    """ Gotta make sure the returned predictions have the cv_index column"""
-    predictions = pipeline.predict(X)
-    accuracy = accuracy_score(y, predictions)
-    mcc = matthews_corrcoef(y,predictions)
-    pred_df = pl.DataFrame({"cv_index":X["cv_index"],"predictions":predictions})
-    return pred_df,accuracy, mcc
-
-
-def predict_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
-    feature_set = input_config.feature_sets[pipeline_input.feature_index]
-    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index)
-    print(df_fold)
-    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
-    print(df_train)
-    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
-    print(pipeline)
-    pipeline.fit(df_train,df_train["target"])
-    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
-    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
-    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
-    return PipelineResults(train_predictions = train_predictions,
-                           val_predictions=val_predictions,
-                           test_predictions=test_predictions,
-                           train_accuracy=train_accuracy,
-                           train_mcc=train_mcc,
-                           val_accuracy=val_accuracy,
-                           val_mcc=val_mcc,
-                           test_accuracy=test_accuracy,
-                           test_mcc=test_mcc)
+def results_summary(results:pl.DataFrame,by_test_fold:bool=False) -> pl.DataFrame:
+    groups = [ "classifier","classifier_hp","input_features_name"]
+    if by_test_fold:
+        groups += ["r_outer","r_inner"]
+       
+    summary = results.group_by(
+   groups).agg(
+    pl.col(["mcc_train","mcc_val","mcc_test"]).mean(),
+     pl.col(["accuracy_train","accuracy_val","accuracy_test"]).mean(),
+    pl.len().alias("n")).sort("mcc_val",descending=True)
+    return summary
 
 
 
 
-def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
-    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
-    1) Validate the input_config and check if the preprocessed features are present locally 
-    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
-    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
-    4) collect and aggregate the results locally and save and return the results
-    """
-    #validate the inputs and check if the preprocessed features are present locally
-    df = check_add_cv_index(df,strict=True)
-    validate_preprocessed_inputs(task_config.input_config)
+def get_predictions(joined_df:pl.DataFrame,
+                    cv_type: Tuple[str, str],
+                    inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                    models: Dict[str, List[Dict[str, Any]]],
+                    group_outer: List[str],
+                    k_outer: int,
+                    group_inner: List[str],
+                    k_inner: int,
+                    r_outer: int = 1,
+                    r_inner: int = 1,) -> pl.DataFrame:
+    outs = []
     
-    #extract the subset of columns necessary for constructing the cross validation folds 
-    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
-    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+    for r_o in range(r_outer):
+        for k_o in range(k_outer):
+            for r_i in range(r_inner):
+                for k_i in range(k_inner):
+                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o,k_o,group_inner,r_i,k_i)
+                    for input_feature in inputs:
+                        input_name = get_input_name(input_feature)
+                        for model, hp_list in models.items():
+                            for hp in hp_list:
+                                hp_name = get_hp_classifier_name(hp)
+                                pred_col_name = get_pred_column_name(fold_name, input_name, model, hp_name)
+                                if pred_col_name not in joined_df.columns:
+                                    raise ValueError(f"Column {pred_col_name} not found in the joined_df")
+                                outs.append((fold_name,pred_col_name))
+    return outs
 
-    nested_cv = generate_nested_cv(df_idx,task_config)
+def get_all_predictions_by_inputs_model(joined_df:pl.DataFrame,
+                    cv_type: Tuple[str, str],
+                    inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
+                    models: Dict[str, List[Dict[str, Any]]],
+                    group_outer: List[str],
+                    k_outer: int,
+                    group_inner: List[str],
+                    k_inner: int,
+                    r_outer: int = 1,
+                    r_inner: int = 1,)  :
+    
+    for input_feature in inputs:
+                        input_name = get_input_name(input_feature)
+                        for model, hp_list in models.items():
+                            for hp in hp_list:
+                                hp_name = get_hp_classifier_name(hp)
+                                pred_cols_by_model =[]
+                                for r_o in range(r_outer):
+                                    for k_o in range(k_outer):
+                                        for r_i in range(r_inner):
+                                            for k_i in range(k_inner):
+                                                fold_name = get_fold_name_cv(group_outer, cv_type, r_o,k_o,group_inner,r_i,k_i)
+                                                pred_col_name = get_pred_column_name(fold_name, input_name, model, hp_name)
+                                                if pred_col_name not in joined_df.columns:
+                                                    raise ValueError(f"Column {pred_col_name} not found in the joined_df")
+                                                pred_cols_by_model.append((fold_name,pred_col_name))
+                                yield input_name,model,hp_name,pred_cols_by_model
 
-    for pipeline_input in nested_cv:
-        start = time.time()
-        print(f"Training pipeline with classifier {pipeline_input.cls_config.classifier_name} on feature set {task_config.input_config.feature_sets[pipeline_input.feature_index]}")
-        results = predict_pipeline(task_config.input_config,pipeline_input)
-        print(results)
-        end = time.time()
-        print(f"Training pipeline took {end-start} seconds")
+---
+
+## init
+
+# This is the __init__.py file for the package.
 
 
 ---
@@ -1727,9 +1812,9 @@ import polars as pl
 from pydantic import BaseModel
 from typing import List, Optional, Tuple, Generator
 import itertools
-from cynde.functional.predict.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
+from cynde.functional.train.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
 
-from cynde.functional.predict.preprocess import check_add_cv_index
+from cynde.functional.train.preprocess import check_add_cv_index
 
 
 
@@ -1955,166 +2040,12 @@ def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generat
 
 ---
 
-## cv test
-
-import logfire
-
-logfire.install_auto_tracing(modules=['cynde'])
-logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
-
-
-
-from cynde.functional.distributed_cv import train_nested_cv_from_np_modal, cv_stub, preprocess_np_modal
-import cynde.functional as cf
-import os
-import polars as pl
-from typing import List, Optional, Tuple, Generator
-import time
-from cynde.functional.predict.types import PredictConfig, BaseClassifierConfig,StratifiedConfig,Feature,FeatureSet,NumericalFeature, CategoricalFeature,EmbeddingFeature, InputConfig, ClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
-from cynde.functional.predict.preprocess import convert_utf8_to_enum, check_add_cv_index, preprocess_inputs, load_preprocessed_features
-from cynde.functional.predict.cv import stratified_combinatorial
-from cynde.functional.predict.classify import create_pipeline ,train_nested_cv
-
-from sklearn.metrics import accuracy_score
-from sklearn.pipeline import Pipeline
-
-
-
-
-
-
-def load_minihermes_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\OpenHermes-2.5_embedded.parquet") -> pl.DataFrame:
-    return pl.read_parquet(data_path)
-
-df = load_minihermes_data()
-df = convert_utf8_to_enum(df, threshold=0.2)
-df = check_add_cv_index(df,strict=False)
-print(df.columns)
-
-feature_set_small_data = {"embeddings":[{"column_name":"conversations_text-embedding-3-small_embeddings",
-                                         "name":"feature set for the smaller oai embeddings",
-                                         "embedder": "text-embedding-3-small_embeddings",
-                                         "embedding_size":1536}]}
-feature_set_large_data = {"embeddings":[{"column_name":"conversations_text-embedding-3-large_embeddings",
-                                         "name":"feature set for the larger oai embeddings",
-                                        "embedder": "text-embedding-3-large_embeddings",
-                                         "embedding_size":3072}]}
-
-input_config_data = {"feature_sets":[feature_set_small_data,feature_set_large_data],
-                        "target_column":"target",
-                        "save_folder":"C:/Users/Tommaso/Documents/Dev/Cynde/cynde_mount/"}
-
-input_config = InputConfig.model_validate(input_config_data,context={"df":df})
-print("Input config:")
-print(input_config)
-preprocess_inputs(df, input_config)
-
-classifiers_config = ClassifierConfig(classifiers=[RandomForestClassifierConfig(n_estimators=100),RandomForestClassifierConfig(n_estimators=500)])
-print("Classifiers config:")
-print(classifiers_config)
-groups = ["target"]
-cv_config = CVConfig(inner= StratifiedConfig(groups=groups,k=5),
-                     inner_replicas=1,
-                     outer = StratifiedConfig(groups=groups,k=5),
-                        outer_replicas=1)
-print("CV config:")
-print(cv_config)
-
-task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
-
-train_nested_cv(df,task)
-
-
-
----
-
-## distributed
-
-import modal
-from modal import Image
-from typing import Tuple
-from cynde.functional.predict.classify import predict_pipeline
-from cynde.functional.predict.types import PipelineInput,PipelineResults,PredictConfig
-from cynde.functional.predict.preprocess import load_preprocessed_features,check_add_cv_index
-from cynde.functional.predict.cv import train_test_val,generate_nested_cv
-from cynde.functional.predict.classify import create_pipeline ,evaluate_model
-
-
-
-app = modal.App("distributed_cv")
-    
-datascience_image = (
-    Image.debian_slim(python_version="3.12.1")
-    .apt_install("git")
-    .pip_install("polars","scikit-learn","openai","tiktoken")#, force_build=True)
-    
-    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")
-    .env({"CYNDE_DIR": "/opt/cynde"})
-    .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
-)
-with datascience_image.imports():
-    import polars as pl
-    import sklearn as sk
-    import cynde as cy
-
-
-#define the distributed classification method
-@app.function(image=datascience_image, mounts=[modal.Mount.from_local_dir(r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde_mount", remote_path="/root/cynde_mount")])
-def predict_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
-    input_config = pipeline_input.input_config
-    feature_set = input_config.feature_sets[pipeline_input.feature_index]
-    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index,remote=True)
-    print(df_fold)
-    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
-    print(df_train)
-    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
-    print(pipeline)
-    pipeline.fit(df_train,df_train["target"])
-    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
-    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
-    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
-    return PipelineResults(train_predictions = train_predictions,
-                           val_predictions=val_predictions,
-                           test_predictions=test_predictions,
-                           train_accuracy=train_accuracy,
-                           train_mcc=train_mcc,
-                           val_accuracy=val_accuracy,
-                           val_mcc=val_mcc,
-                           test_accuracy=test_accuracy,
-                           test_mcc=test_mcc)
-
-def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl.DataFrame:
-    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
-    1) Validate the input_config and check if the preprocessed features are present locally 
-    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
-    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
-    4) collect and aggregate the results locally and save and return the results
-    """
-    #validate the inputs and check if the preprocessed features are present locally
-    df = check_add_cv_index(df,strict=True)
-    
-    
-    #extract the subset of columns necessary for constructing the cross validation folds 
-    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
-    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
-
-    nested_cv = generate_nested_cv(df_idx,task_config)
-    all_results = []
-    for result in predict_pipeline_distributed.map(list(nested_cv)):
-        all_results.append(result)
-    re_validated_results = []
-    for result in all_results:
-        re_validated_results.append(PipelineResults.model_validate(result))
-    print("Finished!! " ,len(all_results))
-
----
-
 ## preprocess
 
 import polars as pl
 import numpy as np
 from typing import Optional, Tuple
-from cynde.functional.predict.types import InputConfig,FeatureSet
+from cynde.functional.train.types import InputConfig,FeatureSet
 import os
 
 def convert_utf8_to_enum(df: pl.DataFrame, threshold: float = 0.2) -> pl.DataFrame:
@@ -2156,11 +2087,6 @@ def preprocess_inputs(df: pl.DataFrame, input_config: InputConfig):
         column_names = feature_set.column_names()
         feature_set_df = df.select(pl.col("cv_index"),pl.col("target"),pl.col(column_names))
         print(f"selected columns: {feature_set_df.columns}")
-        #explodes all the embedding columns into list of columns
-        # for feature in feature_set.embeddings:
-        #     print(f"Converting {feature.column_name} of type {df[feature.column_name].dtype} to a list of columns.")
-        #     feature_set_df = map_list_to_cols(feature_set_df,feature.column_name)
-
         save_name = feature_set.joined_names()
         save_path = os.path.join(save_folder, f"{save_name}.parquet")
         feature_set_df.write_parquet(save_path)
@@ -2197,6 +2123,174 @@ def map_list_to_cols(df:pl.DataFrame, list_column:str) -> pl.DataFrame:
     width = len(df[list_column][0])
     return df.with_columns(pl.col(list_column).list.get(i).alias(f"{list_column}_{i}") for i in range(width)).select(pl.all().exclude(list_column))
 
+
+---
+
+## train local
+
+from sklearn.ensemble import RandomForestClassifier,HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, PowerTransformer, QuantileTransformer, Normalizer, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+import polars as pl
+from typing import Tuple
+import time
+from cynde.functional.train.types import PipelineResults,PredictConfig,PipelineInput,FeatureSet,InputConfig,ClassifierConfig,BaseClassifierConfig, LogisticRegressionConfig, RandomForestClassifierConfig, HistGradientBoostingClassifierConfig, CVConfig
+from cynde.functional.train.cv import train_test_val,generate_nested_cv
+from cynde.functional.train.preprocess import load_preprocessed_features,check_add_cv_index,validate_preprocessed_inputs
+
+def create_pipeline(df: pl.DataFrame, feature_set: FeatureSet, classifier_config: BaseClassifierConfig) -> Pipeline:
+    """ maybne the df.schema is enough and we do not need to pass the whole df """
+    transformers = []
+    numerical_features = [feature.column_name for feature in feature_set.numerical]
+    if numerical_features:
+        scaler = feature_set.numerical[0].get_scaler()  # Assuming all numerical features use the same scaler
+        transformers.append(("numerical", scaler, numerical_features))
+    embedding_features = [feature.column_name for feature in feature_set.embeddings]
+    if embedding_features:
+        #embedding features are stored as list[float] in polars but we map them to multiple columns of float in sklearn
+        # so here we assume that we already pre-processed each embedding_feature to bea  lsit of columns of format column_name_{i}
+        #accumulate for each embedding feature the list of columns that represent it and flatten it
+        embedding_features = [f"{feature}_{i}" for feature in embedding_features for i in range(0,feature_set.embeddings[0].embedding_size)]
+        scaler = feature_set.embeddings[0].get_scaler()  # Assuming all embedding features use the same scaler
+        transformers.append(("embedding", scaler, embedding_features))
+
+    categorical_features = [feature.column_name for feature in feature_set.categorical]
+    if categorical_features:
+        for feature in feature_set.categorical:
+            if feature.one_hot_encoding:
+                if df[feature.column_name].dtype == pl.Categorical:
+                    categories = [df[feature.column_name].unique().to_list()]
+                elif df[feature.column_name].dtype == pl.Enum:
+                    categories = [df[feature.column_name].dtype.categories]
+                else:
+                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Categorical or pl.Enum for one-hot encoding.")
+                one_hot_encoder = OneHotEncoder(categories=categories, handle_unknown='error', sparse_output=False)
+                transformers.append((f"categorical_{feature.column_name}", one_hot_encoder, [feature.column_name]))
+            else:
+                if df[feature.column_name].dtype not in [pl.Float32, pl.Float64]:
+                    raise ValueError(f"Column '{feature.column_name}' must be of type pl.Float32 or pl.Float64 for physical representation.")
+                transformers.append((f"categorical_{feature.column_name}", "passthrough", [feature.column_name]))
+
+    preprocessor = ColumnTransformer(transformers)
+
+    # Create the classifier based on the classifier configuration
+    if isinstance(classifier_config, LogisticRegressionConfig):
+        classifier = LogisticRegression(**classifier_config.dict(exclude={"classifier_name"}))
+    elif isinstance(classifier_config, RandomForestClassifierConfig):
+        classifier = RandomForestClassifier(**classifier_config.dict(exclude={"classifier_name"}))
+    elif isinstance(classifier_config, HistGradientBoostingClassifierConfig):
+        classifier = HistGradientBoostingClassifier(**classifier_config.dict(exclude={"classifier_name"}))
+    else:
+        raise ValueError(f"Unsupported classifier: {classifier_config.classifier_name}")
+
+    pipeline = Pipeline([("preprocessor", preprocessor), ("classifier", classifier)])
+    pipeline.set_output(transform="polars")
+    return pipeline
+
+def evaluate_model(pipeline: Pipeline, X, y):
+    """ Gotta make sure the returned predictions have the cv_index column"""
+    predictions = pipeline.predict(X)
+    accuracy = accuracy_score(y, predictions)
+    mcc = matthews_corrcoef(y,predictions)
+    pred_df = pl.DataFrame({"cv_index":X["cv_index"],"predictions":predictions})
+    return pred_df,accuracy, mcc
+
+
+def train_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tuple[pl.DataFrame,pl.DataFrame,float,float]:
+    feature_set = input_config.feature_sets[pipeline_input.feature_index]
+    df_fold = load_preprocessed_features(input_config,pipeline_input.feature_index)
+    print(df_fold)
+    df_train,df_val,df_test = train_test_val(df_fold,pipeline_input.train_idx,pipeline_input.val_idx,pipeline_input.test_idx)
+    print(df_train)
+    pipeline = create_pipeline(df_train, feature_set, pipeline_input.cls_config)
+    print(pipeline)
+    pipeline.fit(df_train,df_train["target"])
+    train_predictions, train_accuracy, train_mcc = evaluate_model(pipeline, df_train, df_train["target"])
+    val_predictions,val_accuracy, val_mcc = evaluate_model(pipeline, df_val, df_val["target"])
+    test_predictions,test_accuracy,test_mcc = evaluate_model(pipeline, df_test, df_test["target"])
+    return PipelineResults(train_predictions = train_predictions,
+                           val_predictions=val_predictions,
+                           test_predictions=test_predictions,
+                           train_accuracy=train_accuracy,
+                           train_mcc=train_mcc,
+                           val_accuracy=val_accuracy,
+                           val_mcc=val_mcc,
+                           test_accuracy=test_accuracy,
+                           test_mcc=test_mcc)
+
+
+
+
+def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
+    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
+    1) Validate the input_config and check if the preprocessed features are present locally 
+    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
+    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
+    4) collect and aggregate the results locally and save and return the results
+    """
+    #validate the inputs and check if the preprocessed features are present locally
+    df = check_add_cv_index(df,strict=True)
+    validate_preprocessed_inputs(task_config.input_config)
+    
+    #extract the subset of columns necessary for constructing the cross validation folds 
+    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
+    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+
+    nested_cv = generate_nested_cv(df_idx,task_config)
+
+    for pipeline_input in nested_cv:
+        start = time.time()
+        print(f"Training pipeline with classifier {pipeline_input.cls_config.classifier_name} on feature set {task_config.input_config.feature_sets[pipeline_input.feature_index]}")
+        results = train_pipeline(task_config.input_config,pipeline_input)
+        print(results)
+        end = time.time()
+        print(f"Training pipeline took {end-start} seconds")
+
+
+---
+
+## train modal
+
+import modal
+from typing import Tuple
+from cynde.functional.train.types import PipelineResults,PredictConfig
+from cynde.functional.train.preprocess import check_add_cv_index
+from cynde.functional.train.cv import generate_nested_cv
+import polars as pl
+
+
+
+def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl.DataFrame:
+    """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
+    1) Validate the input_config and check if the preprocessed features are present locally 
+    2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
+    3) execute through a modal starmap a script that fit end eval each pipeline on each feature set and return the results
+    4) collect and aggregate the results locally and save and return the results
+    """
+    #validate the inputs and check if the preprocessed features are present locally
+    df = check_add_cv_index(df,strict=True)
+    
+    f = modal.Function.lookup(task_config.modal_endpoint, "train_pipeline_distributed")
+    r = modal.Function.lookup(task_config.modal_endpoint, "preprocess_inputs_distributed")
+
+    r.remote(df, task_config.input_config)
+    
+    #extract the subset of columns necessary for constructing the cross validation folds 
+    unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
+    df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+
+    nested_cv = generate_nested_cv(df_idx,task_config)
+    all_results = []
+    for result in f.map(list(nested_cv)):
+        all_results.append(result)
+    re_validated_results = []
+    for result in all_results:
+        re_validated_results.append(PipelineResults.model_validate(result))
+    print("Finished!! " ,len(all_results))
+    return re_validated_results
 
 ---
 
@@ -2330,7 +2424,7 @@ class FeatureSet(BaseModel):
 class InputConfig(BaseModel):
     feature_sets: List[FeatureSet]
     target_column: str = Field("target", description="The target column to predict.")
-    remote_folder: str = Field("/root/cynde_mount", description="The remote folder to save the preprocessed features.")
+    remote_folder: str = Field("/cynde_mount", description="The remote folder to save the preprocessed features.")
 
     save_folder: Optional[str] = None
 
@@ -2452,6 +2546,7 @@ class PredictConfig(BaseModel):
     cv_config: CVConfig
     input_config: InputConfig
     classifiers_config: ClassifierConfig
+    modal_endpoint: str = Field("distributed_cv", description="The modal endpoint to use for training each individual fold")
 
 class CVSummary(BaseModel):
     cv_config: Union[KFoldConfig,StratifiedConfig,PurgedConfig] = Field(description="The cross-validation configuration. Required for the summary.")
@@ -2499,198 +2594,9 @@ class PipelineResults(BaseModel):
 
 ---
 
-## prompt
-
-from typing import List, Union
-import polars as pl
-
-def prompt(df: pl.DataFrame, fstring: str, expressions: List[Union[pl.Expr, str]], prompt_name: str, context: str = 'with_columns') -> pl.DataFrame:
-    """
-    Dynamically generates prompts based on the given format string and expressions, 
-    and either adds them as a new column to the DataFrame or selects them based on the specified context.
-
-    Parameters:
-    - df: The Polars DataFrame to which the prompts will be added or from which data will be selected.
-    - fstring: A format string with placeholders for the expressions. If a plain string value is to be included, 
-               it will be converted to a Polars expression.
-    - expressions: A list of Polars expressions or string literals. Each expression must result in either a scalar value 
-                   or a list of values all having the same length. When using 'with_columns' context, the expressions 
-                   must return lists of the same length as the full DataFrame.
-    - prompt_name: The name of the new column that will contain the generated prompts.
-    - context: A string indicating the operation context. Valid values are 'with_columns' and 'select'.
-               'with_columns' appends the generated prompts as a new column, requiring list results to match
-               the DataFrame length. 'select' creates a new DataFrame from the generated prompts, potentially
-               alongside other specified columns.
-
-    Returns:
-    - A DataFrame with the added prompts column if 'with_columns' is used, or a new DataFrame with selected columns
-      if 'select' is used. The result of each expression used in the formatting must result in either a scalar 
-      value or a list of values all having the same length, especially for 'with_columns' context.
-    """
-    # Convert string values in expressions to Polars expressions
-    expressions = [pl.lit(expr) if isinstance(expr, str) else expr for expr in expressions]
-
-    # Validate inputs
-    if not isinstance(df, pl.DataFrame):
-        raise ValueError("df must be a Polars DataFrame.")
-    if not isinstance(fstring, str):
-        raise ValueError("fstring must be a string.")
-    if not all(isinstance(expr, pl.Expr) for expr in expressions):
-        raise ValueError("All items in expressions must be Polars Expr or string literals converted to Polars expressions.")
-    if not isinstance(prompt_name, str):
-        raise ValueError("prompt_name must be a string.")
-    if context not in ['with_columns', 'select']:
-        raise ValueError("context must be either 'with_columns' or 'select'.")
-
-    # Validate the number of placeholders matches the number of expressions
-    placeholders_count = fstring.count("{}")
-    if placeholders_count != len(expressions):
-        raise ValueError(f"The number of placeholders in fstring ({placeholders_count}) does not match the number of expressions ({len(expressions)}).")
-
-    # Use pl.format to generate the formatted expressions
-    formatted_expr = pl.format(fstring, *expressions).alias(prompt_name)
-    
-    # Apply the context-specific operation
-    if context == 'with_columns':
-        # Append the generated prompt as a new column
-        return df.with_columns(formatted_expr)
-    else:  # context == 'select'
-        # Create a new DataFrame with only the generated prompts or alongside other specified columns
-        return df.select(formatted_expr)
-
-
----
-
-## results
-
-import polars as pl
-from cynde.functional.cv import get_fold_name_cv
-from cynde.functional.classify import get_hp_classifier_name, get_pred_column_name, get_input_name
-from typing import List, Dict, Union, Tuple, Any
-
-def results_summary(results:pl.DataFrame,by_test_fold:bool=False) -> pl.DataFrame:
-    groups = [ "classifier","classifier_hp","input_features_name"]
-    if by_test_fold:
-        groups += ["r_outer","r_inner"]
-       
-    summary = results.group_by(
-   groups).agg(
-    pl.col(["mcc_train","mcc_val","mcc_test"]).mean(),
-     pl.col(["accuracy_train","accuracy_val","accuracy_test"]).mean(),
-    pl.len().alias("n")).sort("mcc_val",descending=True)
-    return summary
-
-
-
-
-def get_predictions(joined_df:pl.DataFrame,
-                    cv_type: Tuple[str, str],
-                    inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                    models: Dict[str, List[Dict[str, Any]]],
-                    group_outer: List[str],
-                    k_outer: int,
-                    group_inner: List[str],
-                    k_inner: int,
-                    r_outer: int = 1,
-                    r_inner: int = 1,) -> pl.DataFrame:
-    outs = []
-    
-    for r_o in range(r_outer):
-        for k_o in range(k_outer):
-            for r_i in range(r_inner):
-                for k_i in range(k_inner):
-                    fold_name = get_fold_name_cv(group_outer, cv_type, r_o,k_o,group_inner,r_i,k_i)
-                    for input_feature in inputs:
-                        input_name = get_input_name(input_feature)
-                        for model, hp_list in models.items():
-                            for hp in hp_list:
-                                hp_name = get_hp_classifier_name(hp)
-                                pred_col_name = get_pred_column_name(fold_name, input_name, model, hp_name)
-                                if pred_col_name not in joined_df.columns:
-                                    raise ValueError(f"Column {pred_col_name} not found in the joined_df")
-                                outs.append((fold_name,pred_col_name))
-    return outs
-
-def get_all_predictions_by_inputs_model(joined_df:pl.DataFrame,
-                    cv_type: Tuple[str, str],
-                    inputs: List[Dict[str, Union[List[str], List[List[str]]]]],
-                    models: Dict[str, List[Dict[str, Any]]],
-                    group_outer: List[str],
-                    k_outer: int,
-                    group_inner: List[str],
-                    k_inner: int,
-                    r_outer: int = 1,
-                    r_inner: int = 1,)  :
-    
-    for input_feature in inputs:
-                        input_name = get_input_name(input_feature)
-                        for model, hp_list in models.items():
-                            for hp in hp_list:
-                                hp_name = get_hp_classifier_name(hp)
-                                pred_cols_by_model =[]
-                                for r_o in range(r_outer):
-                                    for k_o in range(k_outer):
-                                        for r_i in range(r_inner):
-                                            for k_i in range(k_inner):
-                                                fold_name = get_fold_name_cv(group_outer, cv_type, r_o,k_o,group_inner,r_i,k_i)
-                                                pred_col_name = get_pred_column_name(fold_name, input_name, model, hp_name)
-                                                if pred_col_name not in joined_df.columns:
-                                                    raise ValueError(f"Column {pred_col_name} not found in the joined_df")
-                                                pred_cols_by_model.append((fold_name,pred_col_name))
-                                yield input_name,model,hp_name,pred_cols_by_model
-
----
-
 ## init
 
 # This is the __init__.py file for the package.
-
-
----
-
-## init
-
-# This is the __init__.py file for the package.
-
-
----
-
-## embedders
-
-from openai import Client
-import time
-from typing import List,Optional
-
-
-def get_embedding_single(text:str, model:str="text-embedding-ada-002", client: Optional[Client]=None):
-    if client is None:
-        client = Client()
-    return client.embeddings.create(input = [text], model=model).data[0].embedding
-
-def get_embedding_list(text_list:List[str], model:str="text-embedding-ada-002", batch_size=100,client: Optional[Client]=None):
-    #count time for processing
-    if client is None:
-        client = Client()
-    start = time.time()
-    embeddings = []
-    if len(text_list) < batch_size:
-        print(f"Processing {len(text_list)} chunks of text in a single batch")
-        # If the list is smaller than the batch size, process it in one go
-        batch_embeddings = client.embeddings.create(input=text_list, model=model).data
-        embeddings.extend([item.embedding for item in batch_embeddings])
-    else:
-        print(f"Processing {len(text_list)} chunks of text in batches")
-        # Process the list in batches
-        #get number of batches
-        for i in range(0, len(text_list), batch_size):
-            
-            batch = text_list[i:i + batch_size]
-            batch_embeddings = client.embeddings.create(input=batch, model=model).data
-            embeddings.extend([item.embedding for item in batch_embeddings])
-            print(f"Processed  {i} cunks of text out of {len(text_list)}")
-    print(f"Embedding Processing took {time.time() - start} seconds")
-    return embeddings
-
 
 
 ---
@@ -2708,6 +2614,51 @@ import polars as pl
 
 def list_struct_to_string(col_name: str, separator: str = " ") -> pl.Expr:
     return pl.col(col_name).list.eval(pl.element().struct.json_encode()).list.join(separator=separator).alias(f"str_{col_name}")
+
+
+---
+
+## hf
+
+import polars as pl
+import requests
+
+def load_hf_dataset_to_polars_df(author: str, repo: str) -> pl.DataFrame:
+    """
+    Load a Hugging Face dataset into a Polars DataFrame given an author and dataset name.
+    
+    Args:
+        author (str): The author of the dataset.
+        repo (str): The repository name of the dataset.
+
+    Returns:
+        pl.DataFrame: The loaded dataset as a Polars DataFrame.
+    """
+    # Construct the dataset identifier
+    dataset_identifier = f"{author}/{repo}"
+    
+    # Construct the URL to query the dataset viewer API for Parquet files
+    dataset_url = f"https://datasets-server.huggingface.co/parquet?dataset={dataset_identifier}"
+
+    # Get the Parquet file URLs from the dataset viewer API
+    response = requests.get(dataset_url)
+    response.raise_for_status()
+    parquet_info = response.json()
+
+    # Extract the Parquet URLs for the "train" split (or any specific split required)
+    urls = [f['url'] for f in parquet_info['parquet_files'] if f['split'] == 'train']
+
+    # Read and concatenate all Parquet files into a single Polars DataFrame
+    df = pl.concat([pl.read_parquet(url) for url in urls])
+
+    return df
+
+# Example usage
+if __name__ == "__main__":
+    author = "NeuroDragon"
+    repo = "BuggedPythonLeetCode"
+    df = load_hf_dataset_to_polars_df(author, repo)
+    print(df)
 
 
 ---

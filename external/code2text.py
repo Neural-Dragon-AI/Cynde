@@ -44,8 +44,8 @@ def process2words(input_string):
 
 
 def merge_text_files(
-    input_dir: str = r"C:\Users\Tommaso\Documents\Dev\modal-examples",
-    output_dir: str = r"C:\Users\Tommaso\Documents\Dev\Cynde",
+    input_dir: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cynde",
+    output_dir: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\external",
     file_extension: str = ".py",
     fancy: bool = False,
     keybert_model: str = "avsolatorio/GIST-small-Embedding-v0",
