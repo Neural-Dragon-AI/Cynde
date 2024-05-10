@@ -1,8 +1,9 @@
-from pydantic import BaseModel, conint, ValidationError, Field
+from pydantic import BaseModel, Field
 from typing import List, Optional
-from text_generation.types import Grammar,Response
+from cynde.deploy.tgi_types import Grammar
 
 
+    
 class TGIRequest(BaseModel):
     prompt: str
     do_sample: bool = False

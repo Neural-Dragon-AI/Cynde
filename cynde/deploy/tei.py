@@ -1,9 +1,6 @@
 import os
 import subprocess
-from pathlib import Path
-from pydantic import BaseModel
-from typing import List
-from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
+from modal import App, Image, Secret, enter, exit, gpu, method
 from cynde.functional.embed.types import EmbeddingRequest
 
 MODEL_ID = "BAAI/bge-small-en-v1.5"

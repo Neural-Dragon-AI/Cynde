@@ -1,10 +1,9 @@
 import os
 import subprocess
-from pathlib import Path
-from pydantic import BaseModel, conint, ValidationError
+from pydantic import BaseModel
 from typing import List, Optional
-from modal import App, Image, Mount, Secret, asgi_app, enter, exit, gpu, method
-from cynde.deploy.types import TGIRequest, LLamaInst3Request
+from modal import App, Image,  Secret , enter, exit, gpu, method
+from cynde.deploy.types import  LLamaInst3Request
 
 MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
 

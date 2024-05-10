@@ -2,7 +2,7 @@ from modal import Volume
 import modal
 from modal import Image
 from typing import Tuple
-from cynde.functional.train.types import PipelineInput,PipelineResults,PredictConfig,InputConfig
+from cynde.functional.train.types import PipelineInput,PipelineResults,InputConfig
 from cynde.functional.train.preprocess import load_preprocessed_features
 from cynde.functional.train.cv import train_test_val
 from cynde.functional.train.train_local import create_pipeline ,evaluate_model

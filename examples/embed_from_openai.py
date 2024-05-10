@@ -4,7 +4,6 @@ logfire.install_auto_tracing(modules=['cynde'])
 from typing import List
 from pydantic import BaseModel, Field
 import polars as pl
-# from cynde.functional.generate.modal_gen import generate_column,validate_df
 from cynde.functional.embed.embed_oai import embed_column, EmbedConfigOAI, OAIApiFromFileConfig
 import modal
 import numpy as np
