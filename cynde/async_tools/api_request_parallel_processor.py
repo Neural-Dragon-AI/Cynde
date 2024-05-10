@@ -41,18 +41,22 @@ from dataclasses import (
     dataclass,
     field,
 )  # for storing API inputs, outputs, and metadata
+from typing import List  # for type hints in functions
+from pydantic import BaseModel, Field
 
+class OAIApiFromFileConfig(BaseModel):
+ requests_filepath: str
+ save_filepath: str
+ api_key: str
+ request_url:str =  Field("https://api.openai.com/v1/embeddings",description="The url to use for generating embeddings")
+ max_requests_per_minute: float = Field(100,description="The maximum number of requests per minute")
+ max_tokens_per_minute: float = Field(1_000_000,description="The maximum number of tokens per minute")
+ max_attempts:int = Field(5,description="The maximum number of attempts to make for each request")
+ logging_level:int = Field(20,description="The logging level to use for the request")
+ token_encoding_name: str = Field("cl100k_base",description="The token encoding scheme to use for calculating request sizes")
 
 async def process_api_requests_from_file(
-    requests_filepath: str,
-    save_filepath: str,
-    request_url: str,
-    api_key: str,
-    max_requests_per_minute: float,
-    max_tokens_per_minute: float,
-    token_encoding_name: str,
-    max_attempts: int,
-    logging_level: int,
+        api_cfg: OAIApiFromFileConfig
 ):
     """
     Asynchronously processes API requests from a given file, executing them in parallel
@@ -77,6 +81,16 @@ async def process_api_requests_from_file(
     and manages request retries and rate limiting. It logs the progress and any issues encountered
     during the process to facilitate monitoring and debugging.
     """
+    #extract variables from config
+    requests_filepath = api_cfg.requests_filepath
+    save_filepath = api_cfg.save_filepath
+    request_url = api_cfg.request_url
+    api_key = api_cfg.api_key
+    max_requests_per_minute = api_cfg.max_requests_per_minute
+    max_tokens_per_minute = api_cfg.max_tokens_per_minute
+    token_encoding_name = api_cfg.token_encoding_name
+    max_attempts = api_cfg.max_attempts
+    logging_level = api_cfg.logging_level
     # constants
     seconds_to_pause_after_rate_limit_error = 15
     seconds_to_sleep_each_loop = (

@@ -9,7 +9,7 @@ import tiktoken
 from pydantic import BaseModel, Field
 
 import asyncio
-from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
+from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file, OAIApiFromFileConfig
 
 MAX_INPUT = {
     "text-embedding-3-small": 8191,
@@ -164,26 +164,17 @@ def check_max_token_len(df:pl.DataFrame, column_name:str, max_len:int=8192):
     return df.select(pl.col('token_len').max().alias('max_token_len'))[0, 'max_token_len']
 
 class EmbedConfigOAI(BaseModel):
+ api_cfg: OAIApiFromFileConfig 
  column_name: str
- requests_filepath: str
- results_filepath: str
- api_key: str
  model_name:str =Field("text-embedding-3-small",description="The model name to use for generating embeddings")
- request_url:str =  Field("https://api.openai.com/v1/embeddings",description="The url to use for generating embeddings")
  batch_size:int = Field (1,description="The batch size to use for generating embeddings")
- max_requests_per_minute: float = Field(100,description="The maximum number of requests per minute")
- max_tokens_per_minute: float = Field(1_000_000,description="The maximum number of tokens per minute")
- max_attempts:int = Field(5,description="The maximum number of attempts to make for each request")
- logging_level:int = Field(20,description="The logging level to use for the request")
 
 
 def embed_column(df: pl.DataFrame, embed_cfg :EmbedConfigOAI) -> pl.DataFrame:
     column_name = embed_cfg.column_name
-    requests_filepath = embed_cfg.requests_filepath
-    results_filepath = embed_cfg.results_filepath
-    api_key = embed_cfg.api_key
+    requests_filepath = embed_cfg.api_cfg.requests_filepath
+    save_filepath = embed_cfg.api_cfg.save_filepath
     model_name = embed_cfg.model_name
-    request_url = embed_cfg.request_url
     batch_size = embed_cfg.batch_size
 
     if check_max_token_len(df, column_name) > MAX_INPUT[model_name]:
@@ -198,20 +189,12 @@ def embed_column(df: pl.DataFrame, embed_cfg :EmbedConfigOAI) -> pl.DataFrame:
     t0 = perf_counter()
     asyncio.run(
         process_api_requests_from_file(
-            requests_filepath=requests_filepath,
-            save_filepath=results_filepath,
-            request_url=request_url,
-            api_key=api_key,
-            max_requests_per_minute=embed_cfg.max_requests_per_minute,
-            max_tokens_per_minute=embed_cfg.max_tokens_per_minute,
-            token_encoding_name="cl100k_base",
-            max_attempts=embed_cfg.max_attempts,
-            logging_level=embed_cfg.logging_level
+            api_cfg=embed_cfg.api_cfg,
             )
         )
     print(f'process_api_requests_from_file took {perf_counter()-t0} minutes/seconds')
     t0 = perf_counter()
-    results_df = load_openai_batched_emb_results_jsonl(results_filepath, column_name=column_name)
+    results_df = load_openai_batched_emb_results_jsonl(save_filepath, column_name=column_name)
     print(f'load_openai_batched_emb_results_jsonl took {perf_counter()-t0} minutes/seconds')
     
     emb_payload_df=emb_payload_df.drop('input').with_columns(pl.col(column_name).alias("input"))
