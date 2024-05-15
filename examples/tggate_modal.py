@@ -13,6 +13,7 @@ from sklearn.pipeline import Pipeline
 from cynde.functional.train.train_modal import train_nested_cv_distributed
 from cynde.functional.train.train_local import train_nested_cv
 from cynde.functional.train.preprocess import preprocess_inputs, get_unique_columns
+from cynde.functional.train.results import merge_results
 
 
 def load_tggate_grouped_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\tgca_nogen_simplified_smiles_malformer_embeddings_ada02_3large_3small_embeddings_grouped.parquet") -> pl.DataFrame:
@@ -126,6 +127,8 @@ preprocess_inputs(df_filtered,task.input_config)
 # results = train_nested_cv(df,task)
 
 results = train_nested_cv_distributed(df_filtered,task)
+merged_results = merge_results(results)
+print(merged_results)
 
 #todo
 # 1) fix the cv objects for purged (add a test) to the pydantic object I guess
