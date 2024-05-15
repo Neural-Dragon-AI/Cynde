@@ -1,7 +1,8 @@
 import polars as pl
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from cynde.functional.train.types import InputConfig,FeatureSet
+from cynde.functional.train.types import PredictConfig, PurgedConfig, StratifiedConfig
 import os
 
 def convert_utf8_to_enum(df: pl.DataFrame, threshold: float = 0.2) -> pl.DataFrame:
@@ -78,3 +79,27 @@ def map_list_to_cols(df:pl.DataFrame, list_column:str) -> pl.DataFrame:
     """ Maps a list column to a DataFrame """
     width = len(df[list_column][0])
     return df.with_columns(pl.col(list_column).list.get(i).alias(f"{list_column}_{i}") for i in range(width)).select(pl.all().exclude(list_column))
+
+def get_unique_columns(predict_config: PredictConfig) -> List[str]:
+        unique_columns = set()
+        unique_columns.add("cv_index")
+
+        # Extract columns from feature sets
+        for feature_set in predict_config.input_config.feature_sets:
+            for feature in feature_set.all_features():
+                unique_columns.add(feature.column_name)
+
+        # Extract inner and outer group columns from CVConfig
+        if hasattr(predict_config.cv_config, 'inner'):
+            unique_columns.update(extract_group_columns(predict_config.cv_config.inner))
+
+        if hasattr(predict_config.cv_config, 'outer') and predict_config.cv_config.outer is not None:
+            unique_columns.update(extract_group_columns(predict_config.cv_config.outer))
+
+        return list(unique_columns)
+
+def extract_group_columns(cv_config) -> set:
+    group_columns = set()
+    if isinstance(cv_config, StratifiedConfig) or isinstance(cv_config, PurgedConfig):
+        group_columns.update(cv_config.groups)
+    return group_columns

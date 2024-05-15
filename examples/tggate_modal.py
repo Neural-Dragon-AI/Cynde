@@ -12,7 +12,7 @@ from cynde.functional.train.preprocess import convert_utf8_to_enum, check_add_cv
 from sklearn.pipeline import Pipeline
 from cynde.functional.train.train_modal import train_nested_cv_distributed
 from cynde.functional.train.train_local import train_nested_cv
-from cynde.functional.train.preprocess import preprocess_inputs
+from cynde.functional.train.preprocess import preprocess_inputs, get_unique_columns
 
 
 def load_tggate_grouped_data(data_path: str = r"C:\Users\Tommaso\Documents\Dev\Cynde\cache\tgca_nogen_simplified_smiles_malformer_embeddings_ada02_3large_3small_embeddings_grouped.parquet") -> pl.DataFrame:
@@ -115,10 +115,17 @@ cv_config = CVConfig(inner= StratifiedConfig(groups=inner_groups,k=5),
 
 task = PredictConfig(input_config=input_config, cv_config=cv_config, classifiers_config=classifiers_config)
 
-preprocess_inputs(df,task.input_config)
-results = train_nested_cv(df,task)
 
-# results = train_nested_cv_distributed(df,task)
+
+
+
+
+df_filtered = df.select(get_unique_columns(task))
+
+preprocess_inputs(df_filtered,task.input_config)
+# results = train_nested_cv(df,task)
+
+results = train_nested_cv_distributed(df_filtered,task)
 
 #todo
 # 1) fix the cv objects for purged (add a test) to the pydantic object I guess
