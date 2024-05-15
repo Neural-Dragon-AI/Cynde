@@ -7,7 +7,7 @@ import polars as pl
 
 
 
-def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> pl.DataFrame:
+def train_nested_cv_distributed(df:pl.DataFrame,task_config:PredictConfig) -> list[PipelineResults]:
     """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
     1) Validate the input_config and check if the preprocessed features are present locally 
     2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 

@@ -1,7 +1,7 @@
-# import logfire
+import logfire
 
-# logfire.install_auto_tracing(modules=['cynde'])
-# logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
+logfire.install_auto_tracing(modules=['cynde'])
+logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
 import os
 import polars as pl
 from typing import List, Optional, Tuple, Generator
@@ -129,5 +129,4 @@ results = train_nested_cv_distributed(df_filtered,task)
 
 #todo
 # 1) fix the cv objects for purged (add a test) to the pydantic object I guess
-# 2) filter the frame to only the columns needed for the cv before uploading
 # 3) results saving and aggregation

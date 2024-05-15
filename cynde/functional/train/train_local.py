@@ -89,7 +89,8 @@ def train_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tup
                            val_accuracy=val_accuracy,
                            val_mcc=val_mcc,
                            test_accuracy=test_accuracy,
-                           test_mcc=test_mcc)
+                           test_mcc=test_mcc,
+                           pipeline_input=pipeline_input)
 
 
 

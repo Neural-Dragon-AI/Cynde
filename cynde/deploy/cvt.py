@@ -68,4 +68,5 @@ def train_pipeline_distributed(pipeline_input:PipelineInput) -> Tuple[pl.DataFra
                            val_accuracy=val_accuracy,
                            val_mcc=val_mcc,
                            test_accuracy=test_accuracy,
-                           test_mcc=test_mcc)
+                           test_mcc=test_mcc,
+                           pipeline_input=pipeline_input)

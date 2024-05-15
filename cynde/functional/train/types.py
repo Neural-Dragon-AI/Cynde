@@ -285,6 +285,7 @@ class PipelineResults(BaseModel):
     val_mcc:float
     test_accuracy:float
     test_mcc:float
+    pipeline_input:PipelineInput
 
     class Config:
         arbitrary_types_allowed = True
