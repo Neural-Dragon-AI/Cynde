@@ -51,8 +51,8 @@ def kfold_combinatorial(df: pl.DataFrame, config: KFoldConfig) -> CVSummary:
     print("num of test_folds combinations",len(test_folds))
     for fold_number, test_fold in enumerate(test_folds):
         # train_folds is a list list of indexes of the train folds and test is list of list of indexes of the test folds we have to flatten the lists and use those to vcat the series in folds to get the indexes of the train and test samples for each fold
-        test_series = pl.concat([folds[i] for i in test_fold]).sort()
-        train_series = pl.concat([folds[i] for i in range(config.k) if i not in test_fold]).sort()
+        test_series = pl.concat([folds[i] for i in test_fold])
+        train_series = pl.concat([folds[i] for i in range(config.k) if i not in test_fold])
         train_indexes.append(train_series.to_list())
         test_indexes.append(test_series.to_list())
         fold_numbers.append(fold_number)
@@ -88,15 +88,15 @@ def kfold_montecarlo(df: pl.DataFrame, config: KFoldConfig) -> CVSummary:
 
 def purged_combinatorial(df:pl.DataFrame, config: PurgedConfig) -> CVSummary:
     df = check_add_cv_index(df,strict=True)
-    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col([config.groups]+["cv_index"]))
+    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col(config.groups+["cv_index"]))
     gdf_slices = slice_frame(gdf,config.k,shuffle=config.shuffle,explode=True)
     train_indexes = []
     test_indexes = []
     fold_numbers = []
     test_folds = list(itertools.combinations(range(config.k),config.n_test_folds))
     for fold_number, test_fold in enumerate(test_folds):
-        test_series = pl.concat([gdf_slices[i] for i in test_fold]).sort()
-        train_series = pl.concat([gdf_slices[i] for i in range(config.k) if i not in test_fold]).sort()
+        test_series = pl.concat([gdf_slices[i] for i in test_fold])["cv_index"]
+        train_series = pl.concat([gdf_slices[i] for i in range(config.k) if i not in test_fold])["cv_index"]
         train_indexes.append(train_series.to_list())
         test_indexes.append(test_series.to_list())
         fold_numbers.append(fold_number)
@@ -110,14 +110,14 @@ def purged_combinatorial(df:pl.DataFrame, config: PurgedConfig) -> CVSummary:
 
 def purged_montecarlo(df:pl.DataFrame, config: PurgedConfig) -> CVSummary:
     df = check_add_cv_index(df,strict=True)
-    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col([config.groups]+["cv_index"]))
+    gdf = df.group_by(config.groups).agg(pl.col("cv_index")).select(pl.col(config.groups+["cv_index"]))
     train_indexes = []
     test_indexes = []
     montecarlo_replicas = []
     for i in range(config.montecarlo_replicas):
         gdf_slices = slice_frame(gdf,config.k,shuffle=True,explode=True)
-        train_series = pl.concat(gdf_slices[:config.k-config.n_test_folds]).sort()
-        test_series = pl.concat(gdf_slices[config.k-config.n_test_folds:]).sort()
+        train_series = pl.concat(gdf_slices[:config.k-config.n_test_folds])["cv_index"]
+        test_series = pl.concat(gdf_slices[config.k-config.n_test_folds:])["cv_index"]
         train_indexes.append(train_series.to_list())
         test_indexes.append(test_series.to_list())
         montecarlo_replicas.append(i)

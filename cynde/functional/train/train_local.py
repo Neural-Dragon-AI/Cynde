@@ -108,6 +108,7 @@ def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
     #extract the subset of columns necessary for constructing the cross validation folds 
     unique_groups = list(set(task_config.cv_config.inner.groups + task_config.cv_config.outer.groups))
     df_idx = df.select(pl.col("cv_index"),pl.col(unique_groups))
+    print(f"using groups {unique_groups} to generate the cv folds" )
 
     nested_cv = generate_nested_cv(df_idx,task_config)
 
