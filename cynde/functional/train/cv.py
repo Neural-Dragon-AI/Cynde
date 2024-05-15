@@ -2,7 +2,7 @@ import polars as pl
 from pydantic import BaseModel
 from typing import List, Optional, Tuple, Generator
 import itertools
-from cynde.functional.train.types import PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
+from cynde.functional.train.types import FoldMeta,PredictConfig, BaseFoldConfig,PipelineInput,BaseClassifierConfig,ClassifierConfig,InputConfig,CVConfig, KFoldConfig, PurgedConfig, StratifiedConfig, CVSummary
 
 from cynde.functional.train.preprocess import check_add_cv_index
 
@@ -217,6 +217,7 @@ def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generat
                 inner_cv = cv_from_config(df_dev_idx_o, cv_config.inner)
                 #Inner Folds -- this is an instance of an inner cross-validation fold
                 for k_i,(train_idx_i,val_idx_i) in enumerate(inner_cv.yield_splits()):
+                    fold_meta = FoldMeta(r_inner=r_i,k_inner=k_i,r_outer=r_o,k_outer=k_o)
                     df_val_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(val_idx_i))
                     df_train_idx_o_i = df_idx.filter(pl.col("cv_index").is_in(train_idx_i))
                     n_train = df_train_idx_o_i.shape[0]
@@ -226,4 +227,4 @@ def generate_nested_cv(df_idx:pl.DataFrame,task_config:PredictConfig) -> Generat
                     #Feature types loop
                     for feature_index,feature_set in enumerate(input_config.feature_sets):
                         for classifier in classifiers_config.classifiers:
-                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier,input_config=input_config)
+                            yield PipelineInput(train_idx=df_train_idx_o_i,val_idx= df_val_idx_o_i,test_idx= df_test_idx_o,feature_index= feature_index,cls_config= classifier,input_config=input_config,fold_meta=fold_meta)

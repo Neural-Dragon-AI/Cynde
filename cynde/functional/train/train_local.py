@@ -95,7 +95,7 @@ def train_pipeline(input_config:InputConfig,pipeline_input:PipelineInput) -> Tup
 
 
 
-def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
+def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> list[PipelineResults]:
     """ Deploy a CV training pipeline to Modal, it requires a df with cv_index column and the features set to have already pre-processed and cached 
     1) Validate the input_config and check if the preprocessed features are present locally 
     2) create a generator that yields the modal path to the features and targets frames as well as the scikit pipeline object 
@@ -112,11 +112,12 @@ def train_nested_cv(df:pl.DataFrame, task_config:PredictConfig) -> pl.DataFrame:
     print(f"using groups {unique_groups} to generate the cv folds" )
 
     nested_cv = generate_nested_cv(df_idx,task_config)
-
+    results=[]
     for pipeline_input in nested_cv:
         start = time.time()
         print(f"Training pipeline with classifier {pipeline_input.cls_config.classifier_name} on feature set {task_config.input_config.feature_sets[pipeline_input.feature_index]}")
-        results = train_pipeline(task_config.input_config,pipeline_input)
-        print(results)
+        result = train_pipeline(task_config.input_config,pipeline_input)
+        results.append(result)
         end = time.time()
         print(f"Training pipeline took {end-start} seconds")
+    return results

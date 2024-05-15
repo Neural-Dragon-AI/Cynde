@@ -139,6 +139,12 @@ class ClassifierName(str, Enum):
 
 class BaseClassifierConfig(BaseModel):
     classifier_name: ClassifierName
+
+    def combine_name(self):
+        """ method for the subclasses which uses a fstring to combine all the fields of the class into a single string
+        the fields are sorted by name to ensure the same order of the string and only the present fields are considered
+        """
+        return "_".join([f"{key}_{value}" for key, value in sorted(self.model_dump().items()) if value is not None])
     
 
 class LogisticRegressionConfig(BaseClassifierConfig):
@@ -263,6 +269,16 @@ class CVSummary(BaseModel):
             test_series = pl.Series(test_idx)
             yield train_series, test_series
 
+class FoldMeta(BaseModel):
+    r_inner :int
+    k_inner :int
+    r_outer :int
+    k_outer :int
+
+    def fold_name(self):
+        return f"{self.r_outer}_{self.k_outer}_{self.r_inner}_{self.k_inner}"
+
+
 class PipelineInput(BaseModel):
     train_idx:pl.DataFrame
     val_idx:pl.DataFrame
@@ -270,6 +286,7 @@ class PipelineInput(BaseModel):
     feature_index:int
     cls_config:BaseClassifierConfig
     input_config : InputConfig
+    fold_meta: FoldMeta
 
     class Config:
         arbitrary_types_allowed = True
@@ -290,6 +307,26 @@ class PipelineResults(BaseModel):
     class Config:
         arbitrary_types_allowed = True
         extra = "allow"
-
-
-
+    
+    def fold_column_name(self):
+        fold_name = self.pipeline_input.fold_meta.fold_name()
+        cls_name = self.pipeline_input.cls_config.classifier_name
+        feature_set_name = self.pipeline_input.input_config.feature_sets[self.pipeline_input.feature_index].joined_names()
+        fold_column_name = f"{cls_name}_{feature_set_name}_{fold_name}"
+        return fold_column_name
+    
+    def to_results_df(self):
+        #results df has 3 columns: cv_index, precitions, fold_name (with "train","val","test")
+        # train_predictions, val_predictions, test_predictions have two columns: cv_index, predictions
+        #we start by deriving the name of the fold column which is composed by: f"{cls_name}_{feature_set_name}_{fold_name}"
+        #the fold name is derived from the pipeline_input by combining r_outer k_outer r_inner k_inner
+        #the cls_name is derived from the cls_config by extracting the classifier_name 
+        fold_column_name = self.fold_column_name()
+        #concatenate vertically the train_predictions, val_predictions, test_predictions while populating with pl.lit the fold_column_name
+        train_df = self.train_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("train").alias(fold_column_name))
+        val_df = self.val_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"), pl.lit("val").alias(fold_column_name))
+        test_df = self.test_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("test").alias(fold_column_name))
+        results_df = pl.concat([train_df,val_df,test_df],how="vertical").sort("cv_index")
+        return results_df
+        
+        
