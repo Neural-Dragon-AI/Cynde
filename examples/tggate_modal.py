@@ -130,6 +130,3 @@ results = train_nested_cv_distributed(df_filtered,task)
 merged_results = merge_results(results)
 print(merged_results)
 
-#todo
-# 1) fix the cv objects for purged (add a test) to the pydantic object I guess
-# 3) results saving and aggregation
