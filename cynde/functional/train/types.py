@@ -323,9 +323,10 @@ class PipelineResults(BaseModel):
         #the cls_name is derived from the cls_config by extracting the classifier_name 
         fold_column_name = self.fold_column_name()
         #concatenate vertically the train_predictions, val_predictions, test_predictions while populating with pl.lit the fold_column_name
-        train_df = self.train_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("train").alias(fold_column_name))
-        val_df = self.val_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"), pl.lit("val").alias(fold_column_name))
-        test_df = self.test_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("test").alias(fold_column_name))
+        f"fold_{fold_column_name}"
+        train_df = self.train_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("train").alias(f"fold_{fold_column_name}"))
+        val_df = self.val_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"), pl.lit("val").alias(f"fold_{fold_column_name}"))
+        test_df = self.test_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("test").alias(f"fold_{fold_column_name}"))
         results_df = pl.concat([train_df,val_df,test_df],how="vertical").sort("cv_index")
         return results_df
         
