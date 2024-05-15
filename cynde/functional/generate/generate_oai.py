@@ -1,5 +1,5 @@
-from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
-from cynde.async_tools.oai_types import ChatCompletion
+from cynde.oaiserver.api_request_parallel_processor import process_api_requests_from_file
+from cynde.oaiserver.oai_types import ChatCompletion
 from cynde.utils.expressions import list_struct_to_string
 from typing import List, Union, Optional
 import polars as pl

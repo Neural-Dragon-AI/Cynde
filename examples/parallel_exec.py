@@ -7,7 +7,7 @@ import os
 import openai
 from cynde.functional.generate import generate_chat_completion_payloads, generate_chat_payloads_from_column
 import asyncio
-from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file
+from cynde.oaiserver.api_request_parallel_processor import process_api_requests_from_file
 from cynde.functional.generate import merge_df_with_openai_results,load_openai_results_jsonl, process_and_merge_llm_responses
 
 

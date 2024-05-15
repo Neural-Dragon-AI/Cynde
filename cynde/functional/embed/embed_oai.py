@@ -9,7 +9,7 @@ import tiktoken
 from pydantic import BaseModel, Field
 
 import asyncio
-from cynde.async_tools.api_request_parallel_processor import process_api_requests_from_file, OAIApiFromFileConfig
+from cynde.oaiserver.api_request_parallel_processor import process_api_requests_from_file, OAIApiFromFileConfig
 
 MAX_INPUT = {
     "text-embedding-3-small": 8191,
