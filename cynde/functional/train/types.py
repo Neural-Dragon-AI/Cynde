@@ -310,24 +310,68 @@ class PipelineResults(BaseModel):
     
     def fold_column_name(self):
         fold_name = self.pipeline_input.fold_meta.fold_name()
-        cls_name = self.pipeline_input.cls_config.classifier_name
+        cls_name = self.pipeline_input.cls_config.combine_name()
         feature_set_name = self.pipeline_input.input_config.feature_sets[self.pipeline_input.feature_index].joined_names()
         fold_column_name = f"{cls_name}_{feature_set_name}_{fold_name}"
         return fold_column_name
     
     def to_results_df(self):
-        #results df has 3 columns: cv_index, precitions, fold_name (with "train","val","test")
-        # train_predictions, val_predictions, test_predictions have two columns: cv_index, predictions
-        #we start by deriving the name of the fold column which is composed by: f"{cls_name}_{feature_set_name}_{fold_name}"
-        #the fold name is derived from the pipeline_input by combining r_outer k_outer r_inner k_inner
-        #the cls_name is derived from the cls_config by extracting the classifier_name 
+        """ The schema of the results dataframe is:
+        cv_index: int
+        predictions_{fold_column_name}: bool
+        fold_{fold_column_name}: str
+        Where fold_column_name is the name of the fold and the classifier and feature set used. with values train, val, test"""
         fold_column_name = self.fold_column_name()
-        #concatenate vertically the train_predictions, val_predictions, test_predictions while populating with pl.lit the fold_column_name
         f"fold_{fold_column_name}"
         train_df = self.train_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("train").alias(f"fold_{fold_column_name}"))
         val_df = self.val_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"), pl.lit("val").alias(f"fold_{fold_column_name}"))
         test_df = self.test_predictions.select(pl.col("cv_index"),pl.col("predictions").alias(f"predictions_{fold_column_name}"),pl.lit("test").alias(f"fold_{fold_column_name}"))
         results_df = pl.concat([train_df,val_df,test_df],how="vertical").sort("cv_index")
         return results_df
+    
+    def to_metrics_df(self):
+        """ Maps the metrics to a single row dataframe with the indexes, 
+        the classifier type, 
+        a columns of type struct for each classifier type with the metadata of that classifier type,
+          a column wiht the value of each fold metadata with the following schema:
+        train_indexes: List[int]
+        val_indexes: List[int]
+        test_indexes: List[int]
+        train_accuracy: float
+        train_mcc: float
+        val_accuracy: float
+        val_mcc: float
+        test_accuracy: float
+        test_mcc: float
+        classifier_name: str
+        for classifier in classifiers:
+            classifier_name_classifier_config: struct
+        r_outer: int
+        k_outer: int
+        r_inner: int
+        k_inner: int
+        """
+        fold_column_name = self.fold_column_name()
+        classifier_name = self.pipeline_input.cls_config.classifier_name
+        classifier_id = self.pipeline_input.cls_config.combine_name()
+        metrics = {
+            "classifier_name": classifier_name,
+            "feature_set_name": self.pipeline_input.input_config.feature_sets[self.pipeline_input.feature_index].joined_names(),
+            "classifier_id": classifier_id,
+            "fold_column_name": fold_column_name,
+            "train_accuracy":self.train_accuracy,
+            "train_mcc":self.train_mcc,
+            "val_accuracy":self.val_accuracy,
+            "val_mcc":self.val_mcc,
+            "test_accuracy":self.test_accuracy,
+            "test_mcc":self.test_mcc
+        }
+        metrics_df = pl.DataFrame(metrics)
+
+        for key, value in self.pipeline_input.cls_config.model_dump().items():
+            metrics_df = metrics_df.with_columns(pl.lit(value).alias(f"{key}_{classifier_name}"))
+        for key, value in self.pipeline_input.fold_meta.model_dump().items():
+            metrics_df = metrics_df.with_columns(pl.lit(value).alias(key))
+        return metrics_df
         
         
