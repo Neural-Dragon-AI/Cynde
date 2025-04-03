@@ -12,3 +12,6 @@ Cynde.egg-info/dependency_links.txt
 /cache/*
 /cynde_mount/*
 .DS_Store
+/.venv
+.env
+.env

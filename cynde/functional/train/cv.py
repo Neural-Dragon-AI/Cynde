@@ -22,16 +22,24 @@ def slice_frame(df:pl.DataFrame, num_slices:int, shuffle:bool = False, explode:b
     else:
         return [df.slice(indexes[i],indexes[i+1]-indexes[i]).select(pl.col("cv_index")) for i in range(len(indexes)-1)]
 
-def hacky_list_relative_slice(list: List[int], k: int):
+def hacky_list_relative_slice(input_list: List[int],k: int):
     slices = {}
-    slice_size = len(list) // k
+    slice_size = len(input_list) // k
     for i in range(k):
         if i < k - 1:
-            slices["fold_{}".format(i)] = list[i*slice_size:(i+1)*slice_size]
+            slices["fold_{}".format(i)] = input_list[i*slice_size:(i+1)*slice_size]
         else:
             # For the last slice, include the remainder
-            slices["fold_{}".format(i)] = list[i*slice_size:]
+            slices["fold_{}".format(i)] = input_list[i*slice_size:]
     return slices
+
+def get_sliced_frame(sdf: pl.DataFrame,k: int,target_col: str = "cv_index"):
+    slices_dicts = []
+    for row in sdf.iter_rows(named=True):
+        cv_index = row[target_col]
+        sliced_cv_index = hacky_list_relative_slice(cv_index,k)
+        slices_dicts.append(sliced_cv_index)
+    return pl.DataFrame(slices_dicts)
 
 def kfold_combinatorial(df: pl.DataFrame, config: KFoldConfig) -> CVSummary:
     df = check_add_cv_index(df,strict=True)
@@ -135,7 +143,7 @@ def stratified_combinatorial(df:pl.DataFrame, config: StratifiedConfig) -> CVSum
     sdf = df.group_by(config.groups).agg(pl.col("cv_index"))
     if config.shuffle:
         sdf = sdf.with_columns(pl.col("cv_index").list.sample(fraction=1,shuffle=True))
-    sliced = sdf.select(pl.col("cv_index").map_elements(lambda s: hacky_list_relative_slice(s,k)).alias("hacky_cv_index")).unnest("hacky_cv_index")
+    sliced = get_sliced_frame(sdf,k,target_col="cv_index")
     train_indexes = []
     test_indexes = []
     fold_numbers = []

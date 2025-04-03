@@ -18,7 +18,7 @@ datascience_image = (
     .apt_install("git")
     .pip_install("polars","scikit-learn","openai","tiktoken")
     
-    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/")#, force_build=True)
+    .run_commands("git clone https://github.com/Neural-Dragon-AI/Cynde/", force_build=True)
     .env({"CYNDE_DIR": "/opt/cynde"})
     .run_commands("cd Cynde && pip install -r requirements.txt && pip install .")
 )

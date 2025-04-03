@@ -1,7 +1,7 @@
-import logfire
+# import logfire
 
-logfire.install_auto_tracing(modules=['cynde'])
-logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
+# logfire.install_auto_tracing(modules=['cynde'])
+# logfire.configure(pydantic_plugin=logfire.PydanticPlugin(record='all'))
 import os
 import polars as pl
 from typing import List, Optional, Tuple, Generator

@@ -20,7 +20,7 @@ def merge_metrics(results:List[PipelineResults]) -> pl.DataFrame:
 
 def aggr_metrics_by_inputs(metrics_df:pl.DataFrame):
     metrics_columns = ["train_accuracy","train_mcc","val_accuracy","val_mcc","test_accuracy","test_mcc"]
-    return metrics_df.group_by("feature_set_name","classifier_id").agg(pl.mean(metrics_columns),pl.std(metrics_columns).alias([f"{feature}_std" for feature in metrics_columns]),pl.len())
+    return metrics_df.group_by("feature_set_name","classifier_id").agg(pl.col(metrics_columns).mean(),pl.col(metrics_columns).std().name.suffix("_std"),pl.len())
 
 def save_results(results:List[PipelineResults],name_prefix:Optional[str] = None):
     #extract from first input the save_path
